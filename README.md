@@ -21,7 +21,7 @@ $ rustup component add rustc-dev
 $ ./run.sh stubs/inter
 ```
 
-## How does it work
+## How it works
 In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
 So we can track the lifetime of lockguards to detect lock-related bugs.
 For each crate (the crate to be checked and its dependencies)
