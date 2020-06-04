@@ -8,13 +8,36 @@ This project is my initial efforts to improve the concurrency safety in Rust eco
 double lock and locks in conflicting order.
 
 ## Install
-[TODO]
+Currently supports rustc version: 1.45.0-nightly (bad3bf622 2020-05-09)
+```
+$ git clone https://github.com/BurtonQin/rust-lock-bug-detector.git
+$ cd rust-lock-bug-detector
+$ rustup component add rust-src
+$ rustup component add rustc-dev
+```
+
+## Example
+```
+$ ./run.sh stubs/inter
+```
 
 ## How does it work
-[TODO]
-
-## Results
-[TODO]
+In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
+So we can track the lifetime of lockguards to detect lock-related bugs.
+For each crate (the crate to be checked and its dependencies)
+1. Collect LockGuard info, including
+   - Where its lifetime begins and where it is dropped.
+   - Use an (immature) automata to track its src (where the lockguard is created) to check if two lockguards come from the same lock heuristically.
+2. Collect the caller-callee relationship to generate the callgraph.
+3. Apply a GenKill algorithm to detect the lock-related bugs.
 
 ## Caveats
-[TODO]
+1. Currently only supports `std::sync::{Mutex, RwLock}`, `parking_lot::{Mutex, RwLock}`, `spin::{Mutex, RwLock}`
+2. The automata to track lockguard src location is still immature and uses many heuristic assumptions. 
+3. The callgraph is crate-specific (the callers and callees are in the same crate) and cannot track indirect call.
+4. In the GenKill algorithm, the current iteration times for one function is limited to 10000 and the call-chain depth is 4 for speed.
+
+## Results
+Found dozens of bugs in many repositories: openethereum, grin, winit, sonic, lighthouse, etc.
+Some of the repositories are dependencies of other large projects.
+I only find one FP is in crate `cc` because the automata mistakenly assumes two unrelated lockguards are from the same src.
