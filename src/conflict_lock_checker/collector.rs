@@ -10,8 +10,7 @@ use rustc_hir::def_id::LocalDefId;
 use rustc_middle::mir::visit::{
     MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext,
 };
-use rustc_middle::mir::{
-    Body, Local, LocalInfo, Place, ProjectionElem};
+use rustc_middle::mir::{Body, Local, LocalInfo, Place, ProjectionElem};
 use rustc_mir::util::def_use::DefUseAnalysis;
 use std::collections::{HashMap, HashSet};
 
@@ -45,7 +44,7 @@ fn batch_gen_depends_for_all<'a, 'b, 'tcx>(
     def_use_analysis: &'b DefUseAnalysis,
 ) -> BatchDependResults<'a, 'b, 'tcx> {
     let mut batch_depend_results = BatchDependResults::new(body, def_use_analysis);
-    for (id, _) in lockguards {
+    for id in lockguards.keys() {
         batch_gen_depends(id.local, &mut batch_depend_results);
     }
     batch_depend_results
@@ -80,68 +79,71 @@ fn collect_lockguard_src_info(
         return lockguards;
     }
     let batch_depends = batch_gen_depends_for_all(&lockguards, body, def_use_analysis);
-    lockguards.into_iter().map(|(id, mut info)| {
-        let (place, tracker_result) = match info.type_name.0 {
-            LockGuardType::StdMutexGuard | LockGuardType::StdRwLockGuard => {
-                let mut tracker = Tracker::new(Place::from(id.local), true, &batch_depends);
-                tracker.track()
-            }
-            _ => {
-                let mut tracker = Tracker::new(Place::from(id.local), false, &batch_depends);
-                tracker.track()
-            }
-        };
-        info.src = match tracker_result {
-            TrackerState::ParamSrc => {
-                let fields = place
-                    .projection
-                    .clone()
-                    .into_iter()
-                    .filter_map(|e| {
-                        if let ProjectionElem::Field(field, _) = e {
-                            Some(field)
-                        } else {
-                            None
-                        }
-                    })
-                    .fold(String::new(), |acc, field| {
-                        acc + &format!("{:?}", field) + ","
-                    });
-                let mut struct_type = body.local_decls[place.local].ty.to_string();
-                if struct_type.starts_with("&") {
-                    struct_type = struct_type.chars().skip(1).collect();
+    lockguards
+        .into_iter()
+        .map(|(id, mut info)| {
+            let (place, tracker_result) = match info.type_name.0 {
+                LockGuardType::StdMutexGuard | LockGuardType::StdRwLockGuard => {
+                    let mut tracker = Tracker::new(Place::from(id.local), true, &batch_depends);
+                    tracker.track()
                 }
-                let lockguard_src = LockGuardSrc::ParamSrc(ParamSrcContext {
+                _ => {
+                    let mut tracker = Tracker::new(Place::from(id.local), false, &batch_depends);
+                    tracker.track()
+                }
+            };
+            info.src = match tracker_result {
+                TrackerState::ParamSrc => {
+                    let fields = place
+                        .projection
+                        .iter()
+                        .filter_map(|e| {
+                            if let ProjectionElem::Field(field, _) = e {
+                                Some(field)
+                            } else {
+                                None
+                            }
+                        })
+                        .fold(String::new(), |acc, field| {
+                            acc + &format!("{:?}", field) + ","
+                        });
+                    let mut struct_type = body.local_decls[place.local].ty.to_string();
+                    if struct_type.starts_with('&') {
+                        struct_type = struct_type.chars().skip(1).collect();
+                    }
+                    let lockguard_src = LockGuardSrc::ParamSrc(ParamSrcContext {
                         struct_type,
                         fields,
                     });
-                Some(lockguard_src)
-            }
-            TrackerState::LocalSrc => {
-                let lockguard_src = LockGuardSrc::LocalSrc(LocalSrcContext { place: format!("{:?}", place) });
-                Some(lockguard_src)
-            }
-            TrackerState::WrapperLock => {
-                match body.local_decls[place.local].local_info {
-                    Some(box LocalInfo::StaticRef {
-                        def_id,
-                        is_thread_local: _,
-                    }) => {
-                        let lockguard_src = LockGuardSrc::GlobalSrc(GlobalSrcContext { global_id: def_id });
-                        Some(lockguard_src)
-                    }
-                    _ => {
-                        // TODO(boqin): any other non-static-ref lock wrapper?
-                        None
+                    Some(lockguard_src)
+                }
+                TrackerState::LocalSrc => {
+                    let lockguard_src = LockGuardSrc::LocalSrc(LocalSrcContext {
+                        place: format!("{:?}", place),
+                    });
+                    Some(lockguard_src)
+                }
+                TrackerState::WrapperLock => {
+                    match body.local_decls[place.local].local_info {
+                        Some(box LocalInfo::StaticRef {
+                            def_id,
+                            is_thread_local: _,
+                        }) => {
+                            let lockguard_src =
+                                LockGuardSrc::GlobalSrc(GlobalSrcContext { global_id: def_id });
+                            Some(lockguard_src)
+                        }
+                        _ => {
+                            // TODO(boqin): any other non-static-ref lock wrapper?
+                            None
+                        }
                     }
                 }
-            }
-            _ => {
-                None
-            }
-        };
-        (id, info)
-    }).collect()
+                _ => None,
+            };
+            (id, info)
+        })
+        .collect()
 }
 
 fn collect_gen_kill_bbs(
@@ -164,17 +166,18 @@ fn collect_gen_kill_bbs(
                         NonUseContext::StorageDead => info.kill_bbs.push(u.location.block),
                         _ => {}
                     },
-                    PlaceContext::NonMutatingUse(context) => match context {
-                        NonMutatingUseContext::Move => info.kill_bbs.push(u.location.block),
-                        _ => {}
-                    },
+                    PlaceContext::NonMutatingUse(context) => {
+                        if let NonMutatingUseContext::Move = context {
+                            info.kill_bbs.push(u.location.block);
+                        }
+                    }
                     PlaceContext::MutatingUse(context) => match context {
                         MutatingUseContext::Drop => info.kill_bbs.push(u.location.block),
                         MutatingUseContext::Store => {
                             retain = false;
                             break;
-                        },
-                        MutatingUseContext::Call => {},
+                        }
+                        MutatingUseContext::Call => {}
                         _ => {}
                     },
                 }

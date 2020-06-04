@@ -8,9 +8,9 @@ mod config;
 mod conflict_lock_checker;
 mod double_lock_checker;
 
-use config::config::*;
-use double_lock_checker::DoubleLockChecker;
+use config::*;
 use conflict_lock_checker::ConflictLockChecker;
+use double_lock_checker::DoubleLockChecker;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 
@@ -26,28 +26,28 @@ impl rustc_driver::Callbacks for DetectorCallbacks {
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             let lock_config = LockDetectorConfig::from_env().unwrap();
             match lock_config.lock_detector_type {
-                LockDetectorType::DoubleLockDetector => {
-                    match lock_config.crate_name_lists {
-                        CrateNameLists::Black(crate_name_black_lists) => {
-                            let mut double_lock_checker = DoubleLockChecker::new(false, crate_name_black_lists);
-                            double_lock_checker.check(tcx);
-                        },
-                        CrateNameLists::White(crate_name_white_lists) => {
-                            let mut double_lock_checker = DoubleLockChecker::new(true, crate_name_white_lists);
-                            double_lock_checker.check(tcx);
-                        },
+                LockDetectorType::DoubleLockDetector => match lock_config.crate_name_lists {
+                    CrateNameLists::Black(crate_name_black_lists) => {
+                        let mut double_lock_checker =
+                            DoubleLockChecker::new(false, crate_name_black_lists);
+                        double_lock_checker.check(tcx);
+                    }
+                    CrateNameLists::White(crate_name_white_lists) => {
+                        let mut double_lock_checker =
+                            DoubleLockChecker::new(true, crate_name_white_lists);
+                        double_lock_checker.check(tcx);
                     }
                 },
-                LockDetectorType::ConflictLockDetector => {
-                    match lock_config.crate_name_lists {
-                        CrateNameLists::Black(crate_name_black_lists) => {
-                            let mut conflict_lock_checker = ConflictLockChecker::new(false, crate_name_black_lists);
-                            conflict_lock_checker.check(tcx);
-                        },
-                        CrateNameLists::White(crate_name_white_lists) => {
-                            let mut conflict_lock_checker = ConflictLockChecker::new(true, crate_name_white_lists);
-                            conflict_lock_checker.check(tcx);
-                        },
+                LockDetectorType::ConflictLockDetector => match lock_config.crate_name_lists {
+                    CrateNameLists::Black(crate_name_black_lists) => {
+                        let mut conflict_lock_checker =
+                            ConflictLockChecker::new(false, crate_name_black_lists);
+                        conflict_lock_checker.check(tcx);
+                    }
+                    CrateNameLists::White(crate_name_white_lists) => {
+                        let mut conflict_lock_checker =
+                            ConflictLockChecker::new(true, crate_name_white_lists);
+                        conflict_lock_checker.check(tcx);
                     }
                 },
             }

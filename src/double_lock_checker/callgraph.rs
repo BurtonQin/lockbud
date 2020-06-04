@@ -26,7 +26,7 @@ impl Callgraph {
         }
     }
 
-    pub fn generate(&mut self, caller: LocalDefId, body: &Body, crate_fn_ids: &Vec<LocalDefId>) {
+    pub fn generate(&mut self, caller: LocalDefId, body: &Body, crate_fn_ids: &[LocalDefId]) {
         for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
             let terminator = bb_data.terminator();
             if let TerminatorKind::Call { ref func, .. } = terminator.kind {

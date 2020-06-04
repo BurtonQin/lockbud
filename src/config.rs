@@ -32,30 +32,28 @@ impl LockDetectorConfig {
             Err(_) => return Err("Env var \"RUST_LOCK_DETECTOR_TYPE\" is not set or provided with wrong value.\nPlease set it to \"DoubleLockDetector\" or \"ConflictLockDetector\""),
         };
         let black_crate_name_lists: Vec<String> = match env::var(black_crate_name_lists) {
-            Ok(black_crate_name_lists) => {
-                black_crate_name_lists.split(",").map(|s|s.to_string()).collect()
-            },
-            Err(_) => {
-                Vec::new()
-            }
+            Ok(black_crate_name_lists) => black_crate_name_lists
+                .split(',')
+                .map(|s| s.to_string())
+                .collect(),
+            Err(_) => Vec::new(),
         };
         let white_crate_name_lists: Vec<String> = match env::var(white_crate_name_lists) {
-            Ok(white_crate_name_lists) => {
-                white_crate_name_lists.split(",").map(|s|s.to_string()).collect()
-            },
-            Err(_) => {
-                Vec::new()
-            }
+            Ok(white_crate_name_lists) => white_crate_name_lists
+                .split(',')
+                .map(|s| s.to_string())
+                .collect(),
+            Err(_) => Vec::new(),
         };
         if !black_crate_name_lists.is_empty() && !white_crate_name_lists.is_empty() {
-            return Err("Env var \"RUST_LOCK_DETECTOR_BLACK_LISTS\" and \"RUST_LOCK_DETECTOR_WHITE_LISTS\" are \nboth provided values. Please clear the values in one of them")
+            Err("Env var \"RUST_LOCK_DETECTOR_BLACK_LISTS\" and \"RUST_LOCK_DETECTOR_WHITE_LISTS\" are \nboth provided values. Please clear the values in one of them")
         } else if !black_crate_name_lists.is_empty() {
-            return Ok(Self {
+            Ok(Self {
                 lock_detector_type,
                 crate_name_lists: CrateNameLists::Black(black_crate_name_lists),
             })
         } else {
-            return Ok(Self {
+            Ok(Self {
                 lock_detector_type,
                 crate_name_lists: CrateNameLists::White(white_crate_name_lists),
             })

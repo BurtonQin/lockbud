@@ -79,28 +79,28 @@ impl DoubleLockChecker {
                 }
             })
             .collect();
-         if lockguards.is_empty() {
-             return;
-         }
-         // println!("{:#?}", lockguards);
-         for (_, info) in lockguards.iter() {
-             self.crate_lockguards.extend(info.clone().into_iter());
-         }
-         println!(
-             "fn with locks: {}, lockguards num: {}, local fn num: {}",
-             lockguards.len(),
-             self.crate_lockguards.len(),
-             fn_ids.len()
-         );
-         // generate callgraph
-         for fn_id in &fn_ids {
-             self.crate_callgraph
-                 .generate(*fn_id, tcx.optimized_mir(*fn_id), &fn_ids);
-         }
-         // self.crate_callgraph.print();
-         for (fn_id, _) in lockguards.iter() {
-             self.check_entry_fn(&tcx, *fn_id);
-         }
+        if lockguards.is_empty() {
+            return;
+        }
+        // println!("{:#?}", lockguards);
+        for (_, info) in lockguards.iter() {
+            self.crate_lockguards.extend(info.clone().into_iter());
+        }
+        println!(
+            "fn with locks: {}, lockguards num: {}, local fn num: {}",
+            lockguards.len(),
+            self.crate_lockguards.len(),
+            fn_ids.len()
+        );
+        // generate callgraph
+        for fn_id in &fn_ids {
+            self.crate_callgraph
+                .generate(*fn_id, tcx.optimized_mir(*fn_id), &fn_ids);
+        }
+        // self.crate_callgraph.print();
+        for (fn_id, _) in lockguards.iter() {
+            self.check_entry_fn(&tcx, *fn_id);
+        }
     }
 
     fn check_entry_fn(&self, tcx: &TyCtxt, fn_id: LocalDefId) {

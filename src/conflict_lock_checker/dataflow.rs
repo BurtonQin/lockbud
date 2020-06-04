@@ -8,7 +8,6 @@
 /// then A depends on B by ref
 /// if A = call func(move B)
 /// then A depends on B by call
-
 extern crate rustc_hir;
 extern crate rustc_middle;
 extern crate rustc_mir;
@@ -68,13 +67,13 @@ impl<'a, 'b, 'tcx> BatchDependResults<'a, 'b, 'tcx> {
                                 match operand {
                                     Operand::Move(rhs) => {
                                         self.depend_query_info.add_depend(
-                                            DependPair(lhs, rhs.clone()),
+                                            DependPair(lhs, *rhs),
                                             DependResult::MoveDepend,
                                         );
                                     }
                                     Operand::Copy(rhs) => {
                                         self.depend_query_info.add_depend(
-                                            DependPair(lhs, rhs.clone()),
+                                            DependPair(lhs, *rhs),
                                             DependResult::CopyDepend,
                                         );
                                     }
@@ -85,7 +84,7 @@ impl<'a, 'b, 'tcx> BatchDependResults<'a, 'b, 'tcx> {
                             }
                             Rvalue::Ref(_, _, rhs) => {
                                 self.depend_query_info
-                                    .add_depend(DependPair(lhs, rhs.clone()), DependResult::RefDepend);
+                                    .add_depend(DependPair(lhs, *rhs), DependResult::RefDepend);
                             }
                             _ => {
                                 // TODO
@@ -111,7 +110,7 @@ impl<'a, 'b, 'tcx> BatchDependResults<'a, 'b, 'tcx> {
                         for arg in args {
                             if let Operand::Move(rhs) = arg {
                                 self.depend_query_info
-                                    .add_depend(DependPair(lhs, rhs.clone()), DependResult::CallDepend);
+                                    .add_depend(DependPair(lhs, *rhs), DependResult::CallDepend);
                                 break;
                             }
                         }

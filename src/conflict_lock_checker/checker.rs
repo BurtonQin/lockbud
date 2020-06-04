@@ -5,17 +5,19 @@ use super::callgraph::Callgraph;
 use super::collector::collect_lockguard_info;
 use super::config::{CrateNameLists, CALLCHAIN_DEPTH};
 use super::genkill::GenKill;
-use super::lock::{LockGuardId, LockGuardInfo};
+use super::lock::{ConflictLockInfo, LockGuardId, LockGuardInfo};
 use rustc_hir::def_id::{LocalDefId, LOCAL_CRATE};
 use rustc_middle::mir::BasicBlock;
 use rustc_middle::ty::TyCtxt;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 pub struct ConflictLockChecker {
     crate_name_lists: CrateNameLists,
     crate_lockguards: HashMap<LockGuardId, LockGuardInfo>,
     crate_callgraph: Callgraph,
+    crate_lock_pairs: RefCell<Vec<ConflictLockInfo>>,
 }
 
 impl ConflictLockChecker {
@@ -25,12 +27,14 @@ impl ConflictLockChecker {
                 crate_name_lists: CrateNameLists::White(crate_name_lists),
                 crate_lockguards: HashMap::new(),
                 crate_callgraph: Callgraph::new(),
+                crate_lock_pairs: RefCell::new(Vec::new()),
             }
         } else {
             Self {
                 crate_name_lists: CrateNameLists::Black(crate_name_lists),
                 crate_lockguards: HashMap::new(),
                 crate_callgraph: Callgraph::new(),
+                crate_lock_pairs: RefCell::new(Vec::new()),
             }
         }
     }
@@ -99,17 +103,30 @@ impl ConflictLockChecker {
     }
 
     fn check_entry_fn(&self, tcx: &TyCtxt, fn_id: LocalDefId) {
+        type ConflictLockBugType<'a> = (
+            (&'a LockGuardInfo, &'a LockGuardInfo),
+            (&'a LockGuardInfo, &'a LockGuardInfo),
+        );
         // println!("checking entry fn: {:?}", fn_id);
         let body = tcx.optimized_mir(fn_id);
         let context = HashSet::new();
         let mut genkill = GenKill::new(fn_id, body, &self.crate_lockguards, &context);
         let conflict_lock_pairs = genkill.analyze(body);
-        let mut conflict_lock_bugs: Vec<(
-            (&LockGuardInfo, &LockGuardInfo),
-            (&LockGuardInfo, &LockGuardInfo),
-        )> = Vec::new();
+
+        let mut conflict_lock_bugs: Vec<ConflictLockBugType> = Vec::new();
         for lhs in conflict_lock_pairs.iter() {
             for rhs in conflict_lock_pairs.iter() {
+                let lf = self.crate_lockguards.get(&lhs.first).unwrap();
+                let ls = self.crate_lockguards.get(&lhs.second).unwrap();
+                let rf = self.crate_lockguards.get(&rhs.first).unwrap();
+                let rs = self.crate_lockguards.get(&rhs.second).unwrap();
+                if *lf == *rs && *ls == *rf {
+                    conflict_lock_bugs.push(((lf, ls), (rf, rs)));
+                }
+            }
+        }
+        for lhs in conflict_lock_pairs.iter() {
+            for rhs in self.crate_lock_pairs.borrow().iter() {
                 let lf = self.crate_lockguards.get(&lhs.first).unwrap();
                 let ls = self.crate_lockguards.get(&lhs.second).unwrap();
                 let rf = self.crate_lockguards.get(&rhs.first).unwrap();
@@ -122,6 +139,9 @@ impl ConflictLockChecker {
         if !conflict_lock_bugs.is_empty() {
             println!("ConflictLockReport: {:#?}", conflict_lock_bugs);
         }
+        self.crate_lock_pairs
+            .borrow_mut()
+            .extend(conflict_lock_pairs.into_iter());
 
         let mut callchain: Vec<(LocalDefId, BasicBlock)> = Vec::new();
         if let Some(callsites) = self.crate_callgraph.get(&fn_id) {
@@ -142,6 +162,10 @@ impl ConflictLockChecker {
         context: &HashSet<LockGuardId>,
         callchain: &mut Vec<(LocalDefId, BasicBlock)>,
     ) {
+        type ConflictLockBugType<'a> = (
+            (&'a LockGuardInfo, &'a LockGuardInfo),
+            (&'a LockGuardInfo, &'a LockGuardInfo),
+        );
         if callchain.len() > CALLCHAIN_DEPTH {
             return;
         }
@@ -149,12 +173,20 @@ impl ConflictLockChecker {
         let body = tcx.optimized_mir(fn_id);
         let mut genkill = GenKill::new(fn_id, body, &self.crate_lockguards, context);
         let conflict_lock_pairs = genkill.analyze(body);
-        let mut conflict_lock_bugs: Vec<(
-            (&LockGuardInfo, &LockGuardInfo),
-            (&LockGuardInfo, &LockGuardInfo),
-        )> = Vec::new();
+        let mut conflict_lock_bugs: Vec<ConflictLockBugType> = Vec::new();
         for lhs in conflict_lock_pairs.iter() {
             for rhs in conflict_lock_pairs.iter() {
+                let lf = self.crate_lockguards.get(&lhs.first).unwrap();
+                let ls = self.crate_lockguards.get(&lhs.second).unwrap();
+                let rf = self.crate_lockguards.get(&rhs.first).unwrap();
+                let rs = self.crate_lockguards.get(&rhs.second).unwrap();
+                if *lf == *rs && *ls == *rf {
+                    conflict_lock_bugs.push(((lf, ls), (rf, rs)));
+                }
+            }
+        }
+        for lhs in conflict_lock_pairs.iter() {
+            for rhs in self.crate_lock_pairs.borrow().iter() {
                 let lf = self.crate_lockguards.get(&lhs.first).unwrap();
                 let ls = self.crate_lockguards.get(&lhs.second).unwrap();
                 let rf = self.crate_lockguards.get(&rhs.first).unwrap();
@@ -167,6 +199,9 @@ impl ConflictLockChecker {
         if !conflict_lock_bugs.is_empty() {
             println!("ConflictLockReport: {:#?}", conflict_lock_bugs);
         }
+        self.crate_lock_pairs
+            .borrow_mut()
+            .extend(conflict_lock_pairs.into_iter());
 
         if let Some(callsites) = self.crate_callgraph.get(&fn_id) {
             for (bb, callee_id) in callsites {

@@ -1,5 +1,5 @@
 extern crate rustc_middle;
-use super::dataflow::{DependResult, BatchDependResults};
+use super::dataflow::{BatchDependResults, DependResult};
 use rustc_middle::mir::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -161,9 +161,7 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
                 self.state = TrackerState::Result;
                 Some(*place)
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 
@@ -183,16 +181,12 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
                 }
                 Some(place)
             }
-            Some((place, DependResult::CopyDepend)) => {
-                Some(place)
-            }
+            Some((place, DependResult::CopyDepend)) => Some(place),
             Some((place, DependResult::CallDepend)) => {
                 self.state = TrackerState::WrapperLock;
                 Some(place)
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
     fn handle_wrapperlock(&mut self, place: Place<'tcx>) -> Option<Place<'tcx>> {
@@ -211,16 +205,12 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
                 }
                 Some(place)
             }
-            Some((place, DependResult::CopyDepend)) => {
-                Some(place)
-            }
+            Some((place, DependResult::CopyDepend)) => Some(place),
             Some((place, DependResult::CallDepend)) => {
                 self.state = TrackerState::WrapperLock;
                 Some(place)
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 }

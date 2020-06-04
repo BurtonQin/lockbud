@@ -1,9 +1,9 @@
-mod dataflow;
 mod callgraph;
 mod checker;
 mod collector;
+mod dataflow;
 mod genkill;
 mod lock;
 mod tracker;
-use super::config::*;
 pub use self::checker::DoubleLockChecker;
+use super::config;

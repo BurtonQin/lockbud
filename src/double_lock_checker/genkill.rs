@@ -88,13 +88,8 @@ impl<'a> GenKill<'a> {
             }
             if !self.compare_lockguards(&new_before, &self.after[&cur]) {
                 self.after.insert(cur, new_before);
-                self.worklist.extend(
-                    body.basic_blocks()[cur]
-                        .terminator()
-                        .successors()
-                        .clone()
-                        .into_iter(),
-                );
+                self.worklist
+                    .extend(body.basic_blocks()[cur].terminator().successors().clone());
             }
         }
         double_lock_bugs
@@ -142,8 +137,7 @@ impl<'a> GenKill<'a> {
             if lockguards
                 .iter()
                 .map(move |k| self.crate_lockguards.get(k).unwrap())
-                .find(|e| **e == *b)
-                .is_some()
+                .any(|e| *e == *b)
             {
                 return false;
             }

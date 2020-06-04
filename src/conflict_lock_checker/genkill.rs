@@ -59,7 +59,7 @@ impl<'a> GenKill<'a> {
         }
     }
     pub fn analyze(&mut self, body: &Body) -> Vec<ConflictLockInfo> {
-        let mut conflict_lock_bugs: Vec<ConflictLockInfo> = Vec::new();
+        let mut conflict_lock_info: Vec<ConflictLockInfo> = Vec::new();
         let mut count: u32 = 0;
         while !self.worklist.is_empty() && count <= RUN_LIMIT {
             count += 1;
@@ -84,20 +84,15 @@ impl<'a> GenKill<'a> {
             }
             if let Some(lockguards) = self.gen.get(&cur) {
                 let conflict_locks = self.union_gen_set(&mut new_before, lockguards);
-                conflict_lock_bugs.extend(conflict_locks.into_iter());
+                conflict_lock_info.extend(conflict_locks.into_iter());
             }
             if !self.compare_lockguards(&new_before, &self.after[&cur]) {
                 self.after.insert(cur, new_before);
-                self.worklist.extend(
-                    body.basic_blocks()[cur]
-                        .terminator()
-                        .successors()
-                        .clone()
-                        .into_iter(),
-                );
+                self.worklist
+                    .extend(body.basic_blocks()[cur].terminator().successors().clone());
             }
         }
-        conflict_lock_bugs
+        conflict_lock_info
     }
 
     pub fn get_live_lockguards(&self, bb: &BasicBlock) -> Option<&HashSet<LockGuardId>> {
@@ -142,8 +137,7 @@ impl<'a> GenKill<'a> {
             if lockguards
                 .iter()
                 .map(move |k| self.crate_lockguards.get(k).unwrap())
-                .find(|e| **e == *b)
-                .is_some()
+                .any(|e| *e == *b)
             {
                 return false;
             }

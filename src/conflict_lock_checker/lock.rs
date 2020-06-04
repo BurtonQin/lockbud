@@ -35,7 +35,7 @@ pub struct GlobalSrcContext {
 #[derive(Debug, Clone)]
 pub struct LockGuardInfo {
     pub type_name: (LockGuardType, String),
-    pub src: Option<LockGuardSrc>, 
+    pub src: Option<LockGuardSrc>,
     pub span: Span,
     pub gen_bbs: Vec<BasicBlock>,
     pub kill_bbs: Vec<BasicBlock>,
@@ -43,16 +43,16 @@ pub struct LockGuardInfo {
 
 impl PartialEq for LockGuardInfo {
     fn eq(&self, other: &Self) -> bool {
-        self.type_name == other.type_name &&
-        if let Some(self_src) = &self.src {
-            if let Some(other_src) = &other.src {
-                *self_src == *other_src
+        self.type_name == other.type_name
+            && if let Some(self_src) = &self.src {
+                if let Some(other_src) = &other.src {
+                    *self_src == *other_src
+                } else {
+                    false
+                }
             } else {
                 false
             }
-        } else {
-            false
-        }
     }
 }
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -144,8 +144,8 @@ pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
 }
 
 fn extract_data_type(lockguard_type: &str, type_name: &str) -> String {
-    assert!(type_name.starts_with(lockguard_type) && type_name.ends_with(">"));
-    return type_name[lockguard_type.len()..type_name.len() - 1].to_string();
+    assert!(type_name.starts_with(lockguard_type) && type_name.ends_with('>'));
+    type_name[lockguard_type.len()..type_name.len() - 1].to_string()
 }
 
 #[test]
