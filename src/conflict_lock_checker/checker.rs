@@ -9,6 +9,7 @@ use super::lock::{ConflictLockInfo, LockGuardId, LockGuardInfo};
 use rustc_hir::def_id::{LocalDefId, LOCAL_CRATE};
 use rustc_middle::mir::BasicBlock;
 use rustc_middle::ty::TyCtxt;
+use rustc_span::Span;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -198,7 +199,18 @@ impl ConflictLockChecker {
         }
         if !conflict_lock_bugs.is_empty() {
             println!("ConflictLockReport: {:#?}", conflict_lock_bugs);
+            let callchain_reports = callchain
+                .iter()
+                .map(move |(fn_id, bb)| {
+                    tcx.optimized_mir(*fn_id).basic_blocks()[*bb]
+                        .terminator()
+                        .source_info
+                        .span
+                })
+                .collect::<Vec<Span>>();
+            println!("{:#?}", callchain_reports);
         }
+
         self.crate_lock_pairs
             .borrow_mut()
             .extend(conflict_lock_pairs.into_iter());

@@ -6,8 +6,6 @@ use super::collector::collect_lockguard_info;
 use super::config::{CrateNameLists, CALLCHAIN_DEPTH};
 use super::genkill::GenKill;
 use super::lock::{DoubleLockInfo, LockGuardId, LockGuardInfo};
-//use super::ssa::frontier::DominanceFrontier;
-//use super::ssa::ssa::SSABody;
 use rustc_hir::def_id::{LocalDefId, LOCAL_CRATE};
 use rustc_middle::mir::BasicBlock;
 use rustc_middle::ty::TyCtxt;
