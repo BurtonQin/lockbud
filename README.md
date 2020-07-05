@@ -14,12 +14,25 @@ $ git clone https://github.com/BurtonQin/rust-lock-bug-detector.git
 $ cd rust-lock-bug-detector
 $ rustup component add rust-src
 $ rustup component add rustc-dev
+$ cargo install --path .
 ```
 
 ## Example
+Test examples
 ```
 $ ./run.sh examples/inter
 ```
+
+Run with cargo subcommands
+```
+$ cargo lock-bug-detect double-lock -- examples/inter
+$ cargo lock-bug-detect conflict-lock -- examples/conflict-inter
+```
+You need to run
+```
+cargo clean
+```
+before re-detecting.
 
 ## How it works
 In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
