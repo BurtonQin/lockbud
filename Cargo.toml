@@ -5,6 +5,13 @@ authors = ["BurtonQin <bobbqqin@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "rust-lock-bug-detector"
+path = "src/main.rs"
+
+[[bin]]
+name = "cargo-lock-bug-detect"
+path = "src/bin/cargo-lock-bug-detect.rs"
 
 [dependencies]
 cargo_metadata = { version = "0.9.0", optional = true }
