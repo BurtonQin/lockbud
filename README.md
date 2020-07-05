@@ -18,7 +18,7 @@ $ rustup component add rustc-dev
 
 ## Example
 ```
-$ ./run.sh stubs/inter
+$ ./run.sh examples/inter
 ```
 
 ## How it works
