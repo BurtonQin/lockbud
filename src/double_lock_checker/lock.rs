@@ -9,25 +9,25 @@ use rustc_span::Span;
 
 use std::hash::Hash;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum LockGuardSrc {
     ParamSrc(ParamSrcContext),
     LocalSrc(LocalSrcContext),
     GlobalSrc(GlobalSrcContext),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct ParamSrcContext {
     pub struct_type: String,
     pub fields: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct LocalSrcContext {
     pub place: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct GlobalSrcContext {
     pub global_id: DefId,
 }
@@ -55,6 +55,22 @@ impl PartialEq for LockGuardInfo {
             }
     }
 }
+
+impl LockGuardInfo {
+    pub fn deadlock_with(&self, other: &Self) -> bool {
+        self.type_name.0.deadlock_with(&other.type_name.0)
+            && self.type_name.1 == other.type_name.1
+            && if let Some(self_src) = &self.src {
+                if let Some(other_src) = &other.src {
+                    *self_src == *other_src
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+    }
+}
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct LockGuardId {
     pub fn_id: LocalDefId,
@@ -66,14 +82,41 @@ impl LockGuardId {
         Self { fn_id, local }
     }
 }
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub enum LockGuardType {
     StdMutexGuard,
-    StdRwLockGuard,
+    StdRwLockReadGuard,
+    StdRwLockWriteGuard,
     ParkingLotMutexGuard,
-    ParkingLotRwLockGuard,
+    ParkingLotRwLockReadGuard,
+    ParkingLotRwLockWriteGuard,
     SpinMutexGuard,
-    SpinRwLockGuard,
+    SpinRwLockReadGuard,
+    SpinRwLockWriteGuard,
+}
+
+impl LockGuardType {
+    pub fn deadlock_with(&self, other: &Self) -> bool {
+        match *self {
+            LockGuardType::StdMutexGuard
+            | LockGuardType::ParkingLotMutexGuard
+            | LockGuardType::SpinMutexGuard => *self == *other,
+            LockGuardType::StdRwLockReadGuard | LockGuardType::StdRwLockWriteGuard => {
+                *other == LockGuardType::StdRwLockReadGuard
+                    || *other == LockGuardType::StdRwLockWriteGuard
+            }
+            LockGuardType::ParkingLotRwLockReadGuard
+            | LockGuardType::ParkingLotRwLockWriteGuard => {
+                *other == LockGuardType::ParkingLotRwLockReadGuard
+                    || *other == LockGuardType::ParkingLotRwLockWriteGuard
+            }
+            LockGuardType::SpinRwLockReadGuard => *other == LockGuardType::SpinRwLockWriteGuard,
+            LockGuardType::SpinRwLockWriteGuard => {
+                *other == LockGuardType::SpinRwLockReadGuard
+                    || *other == LockGuardType::SpinRwLockWriteGuard
+            }
+        }
+    }
 }
 
 pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
@@ -85,12 +128,12 @@ pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
         ))
     } else if type_name.starts_with("std::sync::RwLockReadGuard<") {
         Some((
-            LockGuardType::StdRwLockGuard,
+            LockGuardType::StdRwLockReadGuard,
             extract_data_type("std::sync::RwLockReadGuard<", &type_name),
         ))
     } else if type_name.starts_with("std::sync::RwLockWriteGuard<") {
         Some((
-            LockGuardType::StdRwLockGuard,
+            LockGuardType::StdRwLockWriteGuard,
             extract_data_type("std::sync::RwLockWriteGuard<", &type_name),
         ))
     } else if type_name.starts_with("lock_api::mutex::MutexGuard<") {
@@ -100,27 +143,27 @@ pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
         ))
     } else if type_name.starts_with("lock_api::rwlock::RwLockReadGuard<") {
         Some((
-            LockGuardType::ParkingLotRwLockGuard,
+            LockGuardType::ParkingLotRwLockReadGuard,
             extract_data_type("lock_api::rwlock::RwLockReadGuard<", &type_name),
         ))
     } else if type_name.starts_with("lock_api::rwlock::RwLockWriteGuard<") {
         Some((
-            LockGuardType::ParkingLotRwLockGuard,
+            LockGuardType::ParkingLotRwLockWriteGuard,
             extract_data_type("lock_api::rwlock::RwLockWriteGuard<", &type_name),
         ))
     } else if type_name.starts_with("parking_lot::lock_api::MutexGuard<") {
         Some((
-            LockGuardType::ParkingLotRwLockGuard,
+            LockGuardType::ParkingLotMutexGuard,
             extract_data_type("parking_lot::lock_api::MutexGuard<", &type_name),
         ))
     } else if type_name.starts_with("parking_lot::lock_api::RwLockReadGuard<") {
         Some((
-            LockGuardType::ParkingLotRwLockGuard,
+            LockGuardType::ParkingLotRwLockReadGuard,
             extract_data_type("parking_lot::lock_api::RwLockReadGuard<", &type_name),
         ))
     } else if type_name.starts_with("parking_lot::lock_api::RwLockWriteGuard<") {
         Some((
-            LockGuardType::ParkingLotRwLockGuard,
+            LockGuardType::ParkingLotRwLockWriteGuard,
             extract_data_type("parking_lot::lock_api::RwLockWriteGuard<", &type_name),
         ))
     } else if type_name.starts_with("spin::mutex::MutexGuard<") {
@@ -130,12 +173,12 @@ pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
         ))
     } else if type_name.starts_with("spin::rw_lock::RwLockReadGuard<") {
         Some((
-            LockGuardType::SpinRwLockGuard,
+            LockGuardType::SpinRwLockReadGuard,
             extract_data_type("spin::rw_lock::RwLockReadGuard<", &type_name),
         ))
     } else if type_name.starts_with("spin::rw_lock::RwLockWriteGuard<") {
         Some((
-            LockGuardType::SpinRwLockGuard,
+            LockGuardType::SpinRwLockWriteGuard,
             extract_data_type("spin::rw_lock::RwLockWriteGuard<", &type_name),
         ))
     } else {

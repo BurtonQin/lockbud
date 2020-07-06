@@ -1,5 +1,5 @@
-use std::ffi::OsString;
 use std::env;
+use std::ffi::OsString;
 use std::process::Command;
 
 const CARGO_LOCK_BUG_DETECTOR_HELP: &str = r#"Detect double-lock&conflict-lock on MIR
@@ -61,9 +61,13 @@ fn in_cargo_lock_bug_detect() {
     // this target.  The user gets to control what gets actually passed to lock-bug-detect.
     let mut cmd = cargo();
     cmd.arg("check");
-        match subcommand {
-        LockBugDetectCommand::DoubleLock => cmd.env("RUST_LOCK_DETECTOR_TYPE", "DoubleLockDetector"),
-        LockBugDetectCommand::ConflictLock => cmd.env("RUST_LOCK_DETECTOR_TYPE", "ConflictLockDetector"),
+    match subcommand {
+        LockBugDetectCommand::DoubleLock => {
+            cmd.env("RUST_LOCK_DETECTOR_TYPE", "DoubleLockDetector")
+        }
+        LockBugDetectCommand::ConflictLock => {
+            cmd.env("RUST_LOCK_DETECTOR_TYPE", "ConflictLockDetector")
+        }
     };
     cmd.env("RUSTC", "rust-lock-bug-detector");
     cmd.env("RUST_BACKTRACE", "full");
@@ -76,8 +80,11 @@ fn in_cargo_lock_bug_detect() {
     }
     cmd.env("RUST_LOCK_DETECTOR_BLACK_LISTS", "cc");
     println!("{:?}", cmd);
-    let exit_status =
-           cmd.spawn().expect("could not run cargo").wait().expect("failed to wait for cargo?");
+    let exit_status = cmd
+        .spawn()
+        .expect("could not run cargo")
+        .wait()
+        .expect("failed to wait for cargo?");
 
     if !exit_status.success() {
         std::process::exit(exit_status.code().unwrap_or(-1))

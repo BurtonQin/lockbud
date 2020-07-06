@@ -6,6 +6,7 @@ use super::collector::collect_lockguard_info;
 use super::config::{CrateNameLists, CALLCHAIN_DEPTH};
 use super::genkill::GenKill;
 use super::lock::{DoubleLockInfo, LockGuardId, LockGuardInfo};
+use super::report::DoubleLockReports;
 use rustc_hir::def_id::{LocalDefId, LOCAL_CRATE};
 use rustc_middle::mir::BasicBlock;
 use rustc_middle::ty::TyCtxt;
@@ -13,10 +14,31 @@ use rustc_span::Span;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::cell::RefCell;
+struct FnLockContext {
+    fn_id: LocalDefId,
+    context: HashSet<LockGuardId>,
+    callchain: Vec<(LocalDefId, BasicBlock)>,
+}
+
+impl FnLockContext {
+    fn new(
+        fn_id: LocalDefId,
+        context: HashSet<LockGuardId>,
+        callchain: Vec<(LocalDefId, BasicBlock)>,
+    ) -> Self {
+        Self {
+            fn_id,
+            context,
+            callchain,
+        }
+    }
+}
 pub struct DoubleLockChecker {
     crate_name_lists: CrateNameLists,
     crate_lockguards: HashMap<LockGuardId, LockGuardInfo>,
     crate_callgraph: Callgraph,
+    crate_doublelock_reports: RefCell<DoubleLockReports>, 
 }
 
 impl DoubleLockChecker {
@@ -26,12 +48,14 @@ impl DoubleLockChecker {
                 crate_name_lists: CrateNameLists::White(crate_name_lists),
                 crate_lockguards: HashMap::new(),
                 crate_callgraph: Callgraph::new(),
+                crate_doublelock_reports: RefCell::new(DoubleLockReports::new()),
             }
         } else {
             Self {
                 crate_name_lists: CrateNameLists::Black(crate_name_lists),
                 crate_lockguards: HashMap::new(),
                 crate_callgraph: Callgraph::new(),
+                crate_doublelock_reports: RefCell::new(DoubleLockReports::new()),
             }
         }
     }
@@ -97,11 +121,90 @@ impl DoubleLockChecker {
         }
         // self.crate_callgraph.print();
         for (fn_id, _) in lockguards.iter() {
-            self.check_entry_fn(&tcx, *fn_id);
+            // self.check_entry_fn(&tcx, *fn_id);
+            self.check_entry_fn2(&tcx, *fn_id);
+        }
+        self.crate_doublelock_reports.borrow().pretty_print();
+    }
+
+    fn check_entry_fn2(&mut self, tcx: &TyCtxt, fn_id: LocalDefId) {
+        let context: HashSet<LockGuardId> = HashSet::new();
+        let callchain: Vec<(LocalDefId, BasicBlock)> = Vec::new();
+
+        let mut worklist: Vec<FnLockContext> = Vec::new();
+        // visited: fn_id is inserted at most twice (u8 is insertion times, must <= 2)
+        let mut visited: HashMap<LocalDefId, u8> = HashMap::new();
+        worklist.push(FnLockContext::new(fn_id, context, callchain));
+        visited.insert(fn_id, 1);
+        while let Some(FnLockContext {
+            fn_id,
+            context,
+            callchain,
+        }) = worklist.pop()
+        {
+            let body = tcx.optimized_mir(fn_id);
+            let mut genkill = GenKill::new(fn_id, body, &self.crate_lockguards, &context);
+            let double_lock_bugs = genkill.analyze(body);
+            if !double_lock_bugs.is_empty() {
+                let double_lock_reports = double_lock_bugs
+                    .into_iter()
+                    .map(|DoubleLockInfo { first, second }| {
+                        (
+                            self.crate_lockguards.get(&first).unwrap(),
+                            self.crate_lockguards.get(&second).unwrap(),
+                        )
+                    })
+                    .collect::<Vec<(&LockGuardInfo, &LockGuardInfo)>>();
+                // println!(
+                //     "DoubleLockReport: {:#?}",
+                //     double_lock_reports
+                //         .iter()
+                //         .map(|p| (p.0.span, p.1.span))
+                //         .collect::<Vec<_>>()
+                // );
+                let callchain_reports = callchain
+                    .iter()
+                    .map(move |(fn_id, bb)| {
+                        tcx.optimized_mir(*fn_id).basic_blocks()[*bb]
+                            .terminator()
+                            .source_info
+                            .span
+                    })
+                    .collect::<Vec<Span>>();
+                // println!("Callchain: {:#?}", callchain_reports);
+                for report in double_lock_reports {
+                    self.crate_doublelock_reports.borrow_mut().add(report, &callchain_reports);
+                }
+            }
+            if let Some(callsites) = self.crate_callgraph.get(&fn_id) {
+                for (bb, callee_id) in callsites {
+                    if let Some(context) = genkill.get_live_lockguards(bb) {
+                        let mut callchain = callchain.clone();
+                        callchain.push((fn_id, *bb));
+                        if let Some(times) = visited.get(callee_id) {
+                            if *times == 1 {
+                                visited.insert(*callee_id, 2);
+                                worklist.push(FnLockContext::new(
+                                    *callee_id,
+                                    context.clone(),
+                                    callchain,
+                                ));
+                            }
+                        } else {
+                            visited.insert(*callee_id, 1);
+                            worklist.push(FnLockContext::new(
+                                *callee_id,
+                                context.clone(),
+                                callchain,
+                            ));
+                        }
+                    }
+                }
+            }
         }
     }
 
-    fn check_entry_fn(&self, tcx: &TyCtxt, fn_id: LocalDefId) {
+    fn _check_entry_fn(&self, tcx: &TyCtxt, fn_id: LocalDefId) {
         // println!("checking entry fn: {:?}", fn_id);
         let body = tcx.optimized_mir(fn_id);
         let context = HashSet::new();
