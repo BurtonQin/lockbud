@@ -83,7 +83,9 @@ fn collect_lockguard_src_info(
         .into_iter()
         .map(|(id, mut info)| {
             let (place, tracker_result) = match info.type_name.0 {
-                LockGuardType::StdMutexGuard | LockGuardType::StdRwLockGuard => {
+                LockGuardType::StdMutexGuard
+                | LockGuardType::StdRwLockReadGuard
+                | LockGuardType::StdRwLockWriteGuard => {
                     let mut tracker = Tracker::new(Place::from(id.local), true, &batch_depends);
                     tracker.track()
                 }

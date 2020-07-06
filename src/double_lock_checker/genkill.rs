@@ -113,8 +113,11 @@ impl<'a> GenKill<'a> {
         let mut double_locks: Vec<DoubleLockInfo> = Vec::new();
         for first in new_before.iter() {
             for second in lockguards.iter() {
-                if self.crate_lockguards.get(first).unwrap()
-                    == self.crate_lockguards.get(second).unwrap()
+                if self
+                    .crate_lockguards
+                    .get(first)
+                    .unwrap()
+                    .deadlock_with(self.crate_lockguards.get(second).unwrap())
                 {
                     double_locks.push(DoubleLockInfo {
                         first: *first,
