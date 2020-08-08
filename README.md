@@ -26,8 +26,8 @@ $ ./run.sh examples/inter
 
 Run with cargo subcommands
 ```
-$ cargo lock-bug-detect double-lock -- examples/inter
-$ cargo lock-bug-detect conflict-lock -- examples/conflict-inter
+$ cd examples/inter; cargo clean; cargo lock-bug-detect double-lock 
+$ cd examples/conflict-inter; cargo clean; cargo lock-bug-detect conflict-lock
 ```
 You need to run
 ```
