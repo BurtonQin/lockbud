@@ -4,12 +4,14 @@ use util::HandyRwLock;
 
 struct Foo {
     inner: Arc::<RwLock<i32>>,
+    data: i32,
 }
 
 impl Foo {
     fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(1)),
+            data: 1,
         }
     }
     fn foo(&self) {

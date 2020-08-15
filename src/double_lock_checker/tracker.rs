@@ -39,28 +39,28 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
             match self.state {
                 TrackerState::Init => {
                     if let Some(place) = self.handle_init(self.place, self.contain_result) {
-                        self.place = place
+                        self.place = place;
                     } else {
                         return (self.place, self.state);
                     }
                 }
                 TrackerState::Guard => {
                     if let Some(place) = self.handle_guard(self.place) {
-                        self.place = place
+                        self.place = place;
                     } else {
                         return (self.place, self.state);
                     }
                 }
                 TrackerState::Result => {
                     if let Some(place) = self.handle_result(self.place) {
-                        self.place = place
+                        self.place = place;
                     } else {
                         return (self.place, self.state);
                     }
                 }
                 TrackerState::RefLock => {
                     if let Some(place) = self.handle_reflock(self.place) {
-                        self.place = place
+                        self.place = place;
                     } else {
                         return (self.place, self.state);
                     }
@@ -72,8 +72,12 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
                         return (self.place, self.state);
                     }
                 }
-                TrackerState::LocalSrc => return (self.place, self.state),
-                TrackerState::ParamSrc => return (self.place, self.state),
+                TrackerState::LocalSrc => {
+                    return (self.place, self.state);
+                }
+                TrackerState::ParamSrc => {
+                    return (self.place, self.state);
+                }
             }
         }
     }
@@ -147,7 +151,7 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
         }
         let rhses = self.batch_depend_results.get_depends(place);
         let mut defs = rhses.iter().filter(|(_, result)| {
-            *result == DependResult::CallDepend || *result == DependResult::MoveDepend
+            *result == DependResult::CallDepend || *result == DependResult::MoveDepend || *result == DependResult::CopyDepend
         });
         if defs.clone().count() > 1 {
             return None;
@@ -159,6 +163,10 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
             }
             Some((place, DependResult::MoveDepend)) => {
                 self.state = TrackerState::Result;
+                Some(*place)
+            }
+            Some((place, DependResult::CopyDepend)) => {
+                self.state = TrackerState::RefLock;
                 Some(*place)
             }
             _ => None,
