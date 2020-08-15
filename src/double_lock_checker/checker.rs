@@ -73,7 +73,7 @@ impl DoubleLockChecker {
                 }
             }
         }
-        // println!("{}", crate_name);
+        println!("{}", crate_name);
         // collect fn
         let ids = tcx.mir_keys(LOCAL_CRATE);
         let fn_ids: Vec<LocalDefId> = ids
@@ -108,12 +108,12 @@ impl DoubleLockChecker {
         for (_, info) in lockguards.iter() {
             self.crate_lockguards.extend(info.clone().into_iter());
         }
-        println!(
-            "fn with locks: {}, lockguards num: {}, local fn num: {}",
-            lockguards.len(),
-            self.crate_lockguards.len(),
-            fn_ids.len()
-        );
+        // println!(
+        //     "fn with locks: {}, lockguards num: {}, local fn num: {}",
+        //     lockguards.len(),
+        //     self.crate_lockguards.len(),
+        //     fn_ids.len()
+        // );
         // generate callgraph
         // self.crate_callgraph.generate_mono(tcx);
         let mono_map = self.crate_callgraph.gen_mono(&fn_ids, tcx);
@@ -122,6 +122,7 @@ impl DoubleLockChecker {
             self.crate_callgraph
                 .generate(*fn_id, &fn_ids, &mono_map, tcx);
         }
+        // println!("before check: {}", crate_name);
         // self.crate_callgraph._print();
         for (fn_id, _) in lockguards.iter() {
             // self.check_entry_fn(&tcx, *fn_id);

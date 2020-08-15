@@ -202,6 +202,9 @@ impl Callgraph {
                                         // println!("\tgeneric: {:?}", local_callee_def_id);
                                         if let Some(local_mono_def_id) = mono_def_id.as_local() {
                                             // println!("\tmono: {:?}", mono_def_id);
+                                            if !crate_fn_ids.contains(&local_mono_def_id) {
+                                                continue;
+                                            }
                                             mono_map
                                                 .entry(local_callee_def_id)
                                                 .or_insert_with(HashSet::new)
@@ -264,6 +267,9 @@ impl Callgraph {
                                                 if let Some(local_mono_def_id) =
                                                     mono_def_id.as_local()
                                                 {
+                                                    if !crate_fn_ids.contains(&local_mono_def_id) {
+                                                        continue;
+                                                    }
                                                     // println!("\tmono: {:?}", mono_def_id);
                                                     mono_map
                                                         .entry(local_callee_def_id)
@@ -299,8 +305,7 @@ impl Callgraph {
         def_use_analysis.analyze(body);
         for (local, local_decl) in body.local_decls.iter_enumerated() {
             match local_decl.ty.kind {
-                TyKind::Closure(callee_def_id, _)
-                | TyKind::Generator(callee_def_id, _, _) => {
+                TyKind::Closure(callee_def_id, _) | TyKind::Generator(callee_def_id, _, _) => {
                     if let Some(local_callee_def_id) = callee_def_id.as_local() {
                         if let Some(mono_callee_def_ids) = mono_map.get(&local_callee_def_id) {
                             let use_info = def_use_analysis.local_info(local);
@@ -315,8 +320,12 @@ impl Callgraph {
                             }
                             if let Some(bb) = bb {
                                 for mono_callee_def_id in mono_callee_def_ids {
-                                    // println!("\tx_mono: {:?}", mono_callee_def_id);
-                                    self.insert_direct(caller, bb, *mono_callee_def_id);
+                                    // TODO(Boqin): the closure has a local that is equal to itself,
+                                    // which should be avoided to prevent false recursive calling.
+                                    if caller != *mono_callee_def_id {
+                                        // println!("\txx_mono: {:?}", mono_callee_def_id);
+                                        self.insert_direct(caller, bb, *mono_callee_def_id);
+                                    }
                                 }
                             }
                         }
@@ -374,12 +383,14 @@ impl Callgraph {
                                                 if let Some(local_mono_def_id) =
                                                     mono_def_id.as_local()
                                                 {
-                                                    // println!("\tmono: {:?}", mono_def_id);
-                                                    self.insert_direct(
-                                                        caller,
-                                                        bb,
-                                                        local_mono_def_id,
-                                                    );
+                                                    if crate_fn_ids.contains(&local_mono_def_id) {
+                                                        // println!("mono: {:?}",  mono_def_id);
+                                                        self.insert_direct(
+                                                            caller,
+                                                            bb,
+                                                            local_mono_def_id,
+                                                        );
+                                                    }
                                                 } else {
                                                     // println!("\tno-local: {:?}", mono_def_id);
                                                 }
