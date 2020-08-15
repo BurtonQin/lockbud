@@ -41,7 +41,7 @@ impl Callgraph {
                     } = instance
                     {
                         if let Some(local_def_id) = def_id.as_local() {
-                            println!("caller: {:?}", local_def_id);
+                            // println!("caller: {:?}", local_def_id);
                             let body = tcx.optimized_mir(local_def_id);
                             let mut def_use_analysis = DefUseAnalysis::new(body);
                             def_use_analysis.analyze(body);
@@ -67,10 +67,10 @@ impl Callgraph {
                                                 if let Some(local_mono_def_id) =
                                                     mono_def_id.as_local()
                                                 {
-                                                    println!("\tcallee: {:?}", mono_def_id);
+                                                    // println!("\tcallee: {:?}", mono_def_id);
                                                     closures.push((local, local_mono_def_id));
                                                 } else {
-                                                    println!("\tno-local: {:?}", mono_def_id);
+                                                    // println!("\tno-local: {:?}", mono_def_id);
                                                 }
                                             }
                                             _ => {}
@@ -117,20 +117,20 @@ impl Callgraph {
                                                             if let Some(local_mono_def_id) =
                                                                 mono_def_id.as_local()
                                                             {
-                                                                println!(
-                                                                    "\tcallee: {:?}",
-                                                                    mono_def_id
-                                                                );
+                                                                // println!(
+                                                                //     "\tcallee: {:?}",
+                                                                //     mono_def_id
+                                                                // );
                                                                 self.insert_direct(
                                                                     local_def_id,
                                                                     bb,
                                                                     local_mono_def_id,
                                                                 );
                                                             } else {
-                                                                println!(
-                                                                    "\tno-local: {:?}",
-                                                                    mono_def_id
-                                                                );
+                                                                // println!(
+                                                                //     "\tno-local: {:?}",
+                                                                //     mono_def_id
+                                                                // );
                                                             }
                                                         }
                                                         _ => {}
@@ -199,15 +199,15 @@ impl Callgraph {
                                 match ty_kind {
                                     Some(TyKind::FnDef(mono_def_id, _))
                                     | Some(TyKind::Closure(mono_def_id, _)) => {
-                                        println!("\tgeneric: {:?}", local_callee_def_id);
+                                        // println!("\tgeneric: {:?}", local_callee_def_id);
                                         if let Some(local_mono_def_id) = mono_def_id.as_local() {
-                                            println!("\tmono: {:?}", mono_def_id);
+                                            // println!("\tmono: {:?}", mono_def_id);
                                             mono_map
                                                 .entry(local_callee_def_id)
                                                 .or_insert_with(HashSet::new)
                                                 .insert(local_mono_def_id);
                                         } else {
-                                            println!("\tno-local: {:?}", mono_def_id);
+                                            // println!("\tno-local: {:?}", mono_def_id);
                                         }
                                     }
                                     _ => {}
@@ -260,17 +260,17 @@ impl Callgraph {
                                         match ty_kind {
                                             Some(TyKind::FnDef(mono_def_id, _))
                                             | Some(TyKind::Closure(mono_def_id, _)) => {
-                                                println!("\tgeneric: {:?}", local_callee_def_id);
+                                                // println!("\tgeneric: {:?}", local_callee_def_id);
                                                 if let Some(local_mono_def_id) =
                                                     mono_def_id.as_local()
                                                 {
-                                                    println!("\tmono: {:?}", mono_def_id);
+                                                    // println!("\tmono: {:?}", mono_def_id);
                                                     mono_map
                                                         .entry(local_callee_def_id)
                                                         .or_insert_with(HashSet::new)
                                                         .insert(local_mono_def_id);
                                                 } else {
-                                                    println!("\tno-local: {:?}", mono_def_id);
+                                                    // println!("\tno-local: {:?}", mono_def_id);
                                                 }
                                             }
                                             _ => {}
@@ -294,7 +294,7 @@ impl Callgraph {
         tcx: TyCtxt,
     ) {
         let body = tcx.optimized_mir(caller);
-        println!("caller:{:?}", caller);
+        // println!("caller:{:?}", caller);
         let mut def_use_analysis = DefUseAnalysis::new(body);
         def_use_analysis.analyze(body);
         for (local, local_decl) in body.local_decls.iter_enumerated() {
@@ -315,7 +315,7 @@ impl Callgraph {
                             }
                             if let Some(bb) = bb {
                                 for mono_callee_def_id in mono_callee_def_ids {
-                                    println!("\tx_mono: {:?}", mono_callee_def_id);
+                                    // println!("\tx_mono: {:?}", mono_callee_def_id);
                                     self.insert_direct(caller, bb, *mono_callee_def_id);
                                 }
                             }
@@ -333,13 +333,13 @@ impl Callgraph {
                         TyKind::FnDef(callee_def_id, substs)
                         | TyKind::Closure(callee_def_id, substs) => {
                             if let Some(local_callee_def_id) = callee_def_id.as_local() {
-                                println!("callee: {:?},{:?}", callee_def_id, substs);
+                                // println!("callee: {:?},{:?}", callee_def_id, substs);
                                 if substs.has_param_types_or_consts() {
                                     if let Some(mono_callee_def_ids) =
                                         mono_map.get(&local_callee_def_id)
                                     {
                                         for mono_callee_def_id in mono_callee_def_ids {
-                                            println!("\tx_mono: {:?}", mono_callee_def_id);
+                                            // println!("\tx_mono: {:?}", mono_callee_def_id);
                                             self.insert_direct(caller, bb, *mono_callee_def_id);
                                         }
                                     }
@@ -374,21 +374,21 @@ impl Callgraph {
                                                 if let Some(local_mono_def_id) =
                                                     mono_def_id.as_local()
                                                 {
-                                                    println!("\tmono: {:?}", mono_def_id);
+                                                    // println!("\tmono: {:?}", mono_def_id);
                                                     self.insert_direct(
                                                         caller,
                                                         bb,
                                                         local_mono_def_id,
                                                     );
                                                 } else {
-                                                    println!("\tno-local: {:?}", mono_def_id);
+                                                    // println!("\tno-local: {:?}", mono_def_id);
                                                 }
                                             }
                                             _ => {}
                                         };
                                     }
                                 } else {
-                                    println!("\tnot-local-fn: {:?}", local_callee_def_id);
+                                    // println!("\tnot-local-fn: {:?}", local_callee_def_id);
                                 }
                             }
                         }

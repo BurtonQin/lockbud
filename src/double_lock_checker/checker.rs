@@ -104,7 +104,7 @@ impl DoubleLockChecker {
         if lockguards.is_empty() {
             return;
         }
-        println!("{:#?}", lockguards);
+        // println!("{:#?}", lockguards);
         for (_, info) in lockguards.iter() {
             self.crate_lockguards.extend(info.clone().into_iter());
         }
@@ -122,7 +122,7 @@ impl DoubleLockChecker {
             self.crate_callgraph
                 .generate(*fn_id, &fn_ids, &mono_map, tcx);
         }
-        self.crate_callgraph._print();
+        // self.crate_callgraph._print();
         for (fn_id, _) in lockguards.iter() {
             // self.check_entry_fn(&tcx, *fn_id);
             self.check_entry_fn2(&tcx, *fn_id);
@@ -182,7 +182,7 @@ impl DoubleLockChecker {
             if let Some(callsites) = self.crate_callgraph.get(&fn_id) {
                 for (bb, callee_id) in callsites {
                     if let Some(context) = genkill.get_live_lockguards(bb) {
-                        println!("Before {:?} calling {:?}: {:#?}", fn_id, callee_id, context);
+                        // println!("Before {:?} calling {:?}: {:#?}", fn_id, callee_id, context);
                         let mut callchain = callchain.clone();
                         callchain.push((fn_id, *bb));
                         if let Some(times) = visited.get(callee_id) {
