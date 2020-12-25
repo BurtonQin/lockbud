@@ -21,7 +21,7 @@ rm $cargo_dir_file
 touch $cargo_dir_file
 
 pushd "$1" > /dev/null
-#cargo clean
+cargo clean
 cargo_tomls=$(find . -name "Cargo.toml")
 for cargo_toml in "${cargo_tomls[@]}"
 do
