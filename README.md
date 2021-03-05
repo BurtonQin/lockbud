@@ -8,7 +8,7 @@ This project is my initial efforts to improve the concurrency safety in Rust eco
 double lock and locks in conflicting order.
 
 ## Install
-Currently supports rustc version: 1.45.0-nightly (fede83ccf 2020-07-06)
+Currently supports rustc version: 1.51.0-nightly (7a9b552cb 2021-01-12)
 ```
 $ git clone https://github.com/BurtonQin/rust-lock-bug-detector.git
 $ cd rust-lock-bug-detector
