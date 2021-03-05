@@ -6,5 +6,6 @@ mod genkill;
 mod lock;
 mod tracker;
 mod report;
+mod def_use;
 pub use self::checker::DoubleLockChecker;
 use super::config;

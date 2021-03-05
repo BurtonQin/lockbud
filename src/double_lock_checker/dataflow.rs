@@ -14,7 +14,7 @@ extern crate rustc_mir;
 
 use rustc_middle::mir::visit::*;
 use rustc_middle::mir::*;
-use rustc_mir::util::def_use::DefUseAnalysis;
+use super::def_use::DefUseAnalysis;
 
 use std::collections::HashMap;
 

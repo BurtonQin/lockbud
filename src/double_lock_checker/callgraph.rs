@@ -6,8 +6,8 @@ use rustc_hir::def_id::{DefId, LocalDefId, LOCAL_CRATE};
 use rustc_middle::mir::visit::*;
 use rustc_middle::mir::*;
 use rustc_middle::ty::*;
-use rustc_mir::util::def_use::DefUseAnalysis;
 use std::collections::{HashMap, HashSet};
+use super::def_use::DefUseAnalysis;
 pub struct Callgraph {
     pub direct: HashMap<LocalDefId, HashMap<BasicBlock, LocalDefId>>,
 }
@@ -29,126 +29,6 @@ impl Callgraph {
         }
     }
 
-    pub fn generate_mono(&mut self, tcx: TyCtxt) {
-        let (_, cgus) = tcx.collect_and_partition_mono_items(LOCAL_CRATE);
-        for cgu in cgus {
-            let mono_items = cgu.items();
-            for mono_item in mono_items {
-                if let (mono::MonoItem::Fn(instance), _) = mono_item {
-                    if let Instance {
-                        def: InstanceDef::Item(def_id),
-                        substs,
-                    } = instance
-                    {
-                        if let Some(local_def_id) = def_id.as_local() {
-                            // println!("caller: {:?}", local_def_id);
-                            let body = tcx.optimized_mir(local_def_id);
-                            let mut def_use_analysis = DefUseAnalysis::new(body);
-                            def_use_analysis.analyze(body);
-                            let mut closures: Vec<(Local, LocalDefId)> = Vec::new();
-                            for (local, local_decl) in body.local_decls.iter_enumerated() {
-                                match local_decl.ty.kind {
-                                    TyKind::Closure(callee_def_id, substs)
-                                    | TyKind::Generator(callee_def_id, substs, _) => {
-                                        if !callee_def_id.is_local() {
-                                            continue;
-                                        }
-                                        let instance = Instance::resolve(
-                                            tcx,
-                                            ParamEnv::reveal_all(),
-                                            callee_def_id,
-                                            substs,
-                                        )
-                                        .unwrap()
-                                        .unwrap();
-                                        match instance.monomorphic_ty(tcx).kind {
-                                            TyKind::Closure(mono_def_id, substs)
-                                            | TyKind::Generator(mono_def_id, substs, _) => {
-                                                if let Some(local_mono_def_id) =
-                                                    mono_def_id.as_local()
-                                                {
-                                                    // println!("\tcallee: {:?}", mono_def_id);
-                                                    closures.push((local, local_mono_def_id));
-                                                } else {
-                                                    // println!("\tno-local: {:?}", mono_def_id);
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            for (local, local_mono_def_id) in closures {
-                                let use_info = def_use_analysis.local_info(local);
-                                for u in &use_info.defs_and_uses {
-                                    if is_terminator_location(&u.location, &body) {
-                                        self.insert_direct(
-                                            local_def_id,
-                                            u.location.block,
-                                            local_mono_def_id,
-                                        );
-                                        break;
-                                        // TODO(Boqin): only consider one terminator that uses the closure for now.
-                                        // This should have covered almost all the cases.
-                                    }
-                                }
-                            }
-                            for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
-                                if let TerminatorKind::Call { ref func, .. } =
-                                    bb_data.terminator().kind
-                                {
-                                    if let Operand::Constant(box constant) = func {
-                                        match constant.literal.ty.kind {
-                                            TyKind::FnDef(callee_def_id, substs)
-                                            | TyKind::Closure(callee_def_id, substs) => {
-                                                if callee_def_id.is_local() {
-                                                    let instance = Instance::resolve(
-                                                        tcx,
-                                                        ParamEnv::reveal_all(),
-                                                        callee_def_id,
-                                                        substs,
-                                                    )
-                                                    .unwrap()
-                                                    .unwrap();
-                                                    match instance.monomorphic_ty(tcx).kind {
-                                                        TyKind::FnDef(mono_def_id, substs)
-                                                        | TyKind::Closure(mono_def_id, substs) => {
-                                                            if let Some(local_mono_def_id) =
-                                                                mono_def_id.as_local()
-                                                            {
-                                                                // println!(
-                                                                //     "\tcallee: {:?}",
-                                                                //     mono_def_id
-                                                                // );
-                                                                self.insert_direct(
-                                                                    local_def_id,
-                                                                    bb,
-                                                                    local_mono_def_id,
-                                                                );
-                                                            } else {
-                                                                // println!(
-                                                                //     "\tno-local: {:?}",
-                                                                //     mono_def_id
-                                                                // );
-                                                            }
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn gen_mono(
         &mut self,
         crate_fn_ids: &[LocalDefId],
@@ -162,7 +42,7 @@ impl Callgraph {
             let mut def_use_analysis = DefUseAnalysis::new(body);
             def_use_analysis.analyze(body);
             for (_local, local_decl) in body.local_decls.iter_enumerated() {
-                match local_decl.ty.kind {
+                match local_decl.ty.kind() {
                     TyKind::Closure(callee_def_id, substs)
                     | TyKind::Generator(callee_def_id, substs, _) => {
                         if let Some(local_callee_def_id) = callee_def_id.as_local() {
@@ -178,19 +58,19 @@ impl Callgraph {
                             if let Ok(Some(instance)) = Instance::resolve(
                                 tcx,
                                 ParamEnv::reveal_all(),
-                                callee_def_id,
+                                *callee_def_id,
                                 substs,
                             ) {
                                 let ty_kind = {
                                     let ty = tcx.type_of(instance.def.def_id());
                                     if !instance.substs.has_param_types_or_consts() {
                                         Some(
-                                            &tcx.subst_and_normalize_erasing_regions(
+                                            tcx.subst_and_normalize_erasing_regions(
                                                 instance.substs,
                                                 ParamEnv::reveal_all(),
-                                                &ty,
+                                                ty,
                                             )
-                                            .kind,
+                                            .kind(),
                                         )
                                     } else {
                                         None
@@ -226,7 +106,7 @@ impl Callgraph {
                 let terminator = bb_data.terminator();
                 if let TerminatorKind::Call { ref func, .. } = terminator.kind {
                     if let Operand::Constant(box constant) = func {
-                        match constant.literal.ty.kind {
+                        match constant.literal.ty.kind() {
                             TyKind::FnDef(callee_def_id, substs)
                             | TyKind::Closure(callee_def_id, substs) => {
                                 if let Some(local_callee_def_id) = callee_def_id.as_local() {
@@ -242,19 +122,19 @@ impl Callgraph {
                                     if let Ok(Some(instance)) = Instance::resolve(
                                         tcx,
                                         ParamEnv::reveal_all(),
-                                        callee_def_id,
+                                        *callee_def_id,
                                         substs,
                                     ) {
                                         let ty_kind = {
                                             let ty = tcx.type_of(instance.def.def_id());
                                             if !instance.substs.has_param_types_or_consts() {
                                                 Some(
-                                                    &tcx.subst_and_normalize_erasing_regions(
+                                                    tcx.subst_and_normalize_erasing_regions(
                                                         instance.substs,
                                                         ParamEnv::reveal_all(),
-                                                        &ty,
+                                                        ty,
                                                     )
-                                                    .kind,
+                                                    .kind(),
                                                 )
                                             } else {
                                                 None
@@ -304,7 +184,7 @@ impl Callgraph {
         let mut def_use_analysis = DefUseAnalysis::new(body);
         def_use_analysis.analyze(body);
         for (local, local_decl) in body.local_decls.iter_enumerated() {
-            match local_decl.ty.kind {
+            match local_decl.ty.kind() {
                 TyKind::Closure(callee_def_id, _) | TyKind::Generator(callee_def_id, _, _) => {
                     if let Some(local_callee_def_id) = callee_def_id.as_local() {
                         if let Some(mono_callee_def_ids) = mono_map.get(&local_callee_def_id) {
@@ -338,7 +218,7 @@ impl Callgraph {
             let terminator = bb_data.terminator();
             if let TerminatorKind::Call { ref func, .. } = terminator.kind {
                 if let Operand::Constant(box constant) = func {
-                    match constant.literal.ty.kind {
+                    match constant.literal.ty.kind() {
                         TyKind::FnDef(callee_def_id, substs)
                         | TyKind::Closure(callee_def_id, substs) => {
                             if let Some(local_callee_def_id) = callee_def_id.as_local() {
@@ -359,19 +239,19 @@ impl Callgraph {
                                     if let Ok(Some(instance)) = Instance::resolve(
                                         tcx,
                                         ParamEnv::reveal_all(),
-                                        callee_def_id,
+                                        *callee_def_id,
                                         substs,
                                     ) {
                                         let ty_kind = {
                                             let ty = tcx.type_of(instance.def.def_id());
                                             if !instance.substs.has_param_types_or_consts() {
                                                 Some(
-                                                    &tcx.subst_and_normalize_erasing_regions(
+                                                    tcx.subst_and_normalize_erasing_regions(
                                                         instance.substs,
                                                         ParamEnv::reveal_all(),
-                                                        &ty,
+                                                        ty,
                                                     )
-                                                    .kind,
+                                                    .kind(),
                                                 )
                                             } else {
                                                 None

@@ -31,7 +31,7 @@ impl Callgraph {
             let terminator = bb_data.terminator();
             if let TerminatorKind::Call { ref func, .. } = terminator.kind {
                 if let Operand::Constant(box constant) = func {
-                    match constant.literal.ty.kind {
+                    match constant.literal.ty.kind() {
                         TyKind::FnDef(callee_def_id, _) | TyKind::Closure(callee_def_id, _) => {
                             if let Some(local_callee_def_id) = callee_def_id.as_local() {
                                 if crate_fn_ids.contains(&local_callee_def_id) {

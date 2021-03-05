@@ -5,5 +5,6 @@ mod dataflow;
 mod genkill;
 mod lock;
 mod tracker;
+mod def_use;
 pub use self::checker::ConflictLockChecker;
 use super::config;

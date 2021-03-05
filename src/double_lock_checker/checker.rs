@@ -81,7 +81,7 @@ impl DoubleLockChecker {
             .into_iter()
             .filter(|id| {
                 let hir = tcx.hir();
-                hir.body_owner_kind(hir.as_local_hir_id(*id))
+                hir.body_owner_kind(hir.local_def_id_to_hir_id(*id))
                     .is_fn_or_closure()
             })
             .collect();

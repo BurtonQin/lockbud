@@ -11,7 +11,7 @@ use rustc_middle::mir::visit::{
     MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext,
 };
 use rustc_middle::mir::{Body, Local, LocalInfo, Place, ProjectionElem};
-use rustc_mir::util::def_use::DefUseAnalysis;
+use super::def_use::DefUseAnalysis;
 use std::collections::{HashMap, HashSet};
 
 pub fn collect_lockguard_info(
