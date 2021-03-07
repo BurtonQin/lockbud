@@ -15,7 +15,7 @@ $ cd rust-lock-bug-detector
 $ rustup component add rust-src
 $ rustup component add rustc-dev
 $ cargo install --path .
-$ export LD_LIBRARY_PATH=$HOME/.rustup/toolchains/nightly-2020-05-09-x86_64-unknown-linux-gnu/lib:$LD_LIBRARY_PATH
+$ export LD_LIBRARY_PATH=$HOME/.rustup/toolchains/nightly-2021-01-13-x86_64-unknown-linux-gnu/lib:$LD_LIBRARY_PATH
 ```
 
 ## Example
