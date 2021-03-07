@@ -126,6 +126,11 @@ pub fn parse_lockguard_type(ty: &Ty) -> Option<(LockGuardType, String)> {
             LockGuardType::StdMutexGuard,
             extract_data_type("std::sync::MutexGuard<", &type_name),
         ))
+    } else if type_name.starts_with("sync::mutex::MutexGuard<") {
+        Some((
+            LockGuardType::StdMutexGuard,
+            extract_data_type("sync::mutex::MutexGuard<", &type_name),
+        ))
     } else if type_name.starts_with("std::sync::RwLockReadGuard<") {
         Some((
             LockGuardType::StdRwLockReadGuard,
