@@ -190,7 +190,7 @@ impl Callgraph {
                             let use_info = def_use_analysis.local_info(local);
                             let mut bb = None;
                             for u in &use_info.defs_and_uses {
-                                if is_terminator_location(&u.location, &body) {
+                                if is_terminator_location(&u.location, body) {
                                     bb = Some(u.location.block);
                                     break;
                                     // TODO(Boqin): only consider one terminator that uses the closure for now.

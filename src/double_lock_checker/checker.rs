@@ -236,7 +236,7 @@ impl DoubleLockChecker {
             for (bb, callee_id) in callsites {
                 if let Some(context) = genkill.get_live_lockguards(bb) {
                     callchain.push((fn_id, *bb));
-                    self.check_fn(&tcx, *callee_id, context, &mut callchain);
+                    self.check_fn(tcx, *callee_id, context, &mut callchain);
                     callchain.pop();
                 }
             }

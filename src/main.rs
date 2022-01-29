@@ -15,7 +15,7 @@ use double_lock_checker::DoubleLockChecker;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_session::early_error;
-use rustc_session::{config::ErrorOutputType, CtfeBacktrace};
+use rustc_session::{config::ErrorOutputType};
 
 struct DetectorCallbacks;
 
