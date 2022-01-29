@@ -1,13 +1,12 @@
 extern crate rustc_hir;
 extern crate rustc_middle;
-extern crate rustc_mir;
 
-use rustc_hir::def_id::{DefId, LocalDefId, LOCAL_CRATE};
-use rustc_middle::mir::visit::*;
+use super::def_use::DefUseAnalysis;
+use rustc_hir::def_id::{LocalDefId};
+
 use rustc_middle::mir::*;
 use rustc_middle::ty::*;
 use std::collections::{HashMap, HashSet};
-use super::def_use::DefUseAnalysis;
 pub struct Callgraph {
     pub direct: HashMap<LocalDefId, HashMap<BasicBlock, LocalDefId>>,
 }
@@ -106,7 +105,7 @@ impl Callgraph {
                 let terminator = bb_data.terminator();
                 if let TerminatorKind::Call { ref func, .. } = terminator.kind {
                     if let Operand::Constant(box constant) = func {
-                        match constant.literal.ty.kind() {
+                        match constant.literal.ty().kind() {
                             TyKind::FnDef(callee_def_id, substs)
                             | TyKind::Closure(callee_def_id, substs) => {
                                 if let Some(local_callee_def_id) = callee_def_id.as_local() {
@@ -218,7 +217,7 @@ impl Callgraph {
             let terminator = bb_data.terminator();
             if let TerminatorKind::Call { ref func, .. } = terminator.kind {
                 if let Operand::Constant(box constant) = func {
-                    match constant.literal.ty.kind() {
+                    match constant.literal.ty().kind() {
                         TyKind::FnDef(callee_def_id, substs)
                         | TyKind::Closure(callee_def_id, substs) => {
                             if let Some(local_callee_def_id) = callee_def_id.as_local() {

@@ -55,7 +55,8 @@ impl ConflictLockChecker {
         }
         // println!("{}", crate_name);
         // collect fn
-        let ids = tcx.mir_keys(LOCAL_CRATE);
+        //let ids = tcx.mir_keys(LOCAL_CRATE);
+        let ids = tcx.mir_keys(());
         let fn_ids: Vec<LocalDefId> = ids
             .clone()
             .into_iter()

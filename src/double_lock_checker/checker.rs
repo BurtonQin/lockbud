@@ -12,9 +12,9 @@ use rustc_middle::mir::BasicBlock;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::cell::RefCell;
 struct FnLockContext {
     fn_id: LocalDefId,
     context: HashSet<LockGuardId>,
@@ -38,7 +38,7 @@ pub struct DoubleLockChecker {
     crate_name_lists: CrateNameLists,
     crate_lockguards: HashMap<LockGuardId, LockGuardInfo>,
     crate_callgraph: Callgraph,
-    crate_doublelock_reports: RefCell<DoubleLockReports>, 
+    crate_doublelock_reports: RefCell<DoubleLockReports>,
 }
 
 impl DoubleLockChecker {
@@ -75,7 +75,8 @@ impl DoubleLockChecker {
         }
         println!("{}", crate_name);
         // collect fn
-        let ids = tcx.mir_keys(LOCAL_CRATE);
+        //let ids = tcx.mir_keys(LOCAL_CRATE);
+        let ids = tcx.mir_keys(());
         let fn_ids: Vec<LocalDefId> = ids
             .clone()
             .into_iter()
@@ -177,7 +178,9 @@ impl DoubleLockChecker {
                     .collect::<Vec<Span>>();
                 // println!("Callchain: {:#?}", callchain_reports);
                 for report in double_lock_reports {
-                    self.crate_doublelock_reports.borrow_mut().add(report, &callchain_reports);
+                    self.crate_doublelock_reports
+                        .borrow_mut()
+                        .add(report, &callchain_reports);
                 }
             }
             if let Some(callsites) = self.crate_callgraph.get(&fn_id) {
