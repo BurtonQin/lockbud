@@ -1,8 +1,8 @@
 extern crate rustc_hir;
 extern crate rustc_middle;
-extern crate rustc_mir;
 
 use super::dataflow::*;
+use super::def_use::DefUseAnalysis;
 use super::lock::*;
 use super::lock::{parse_lockguard_type, LockGuardId, LockGuardInfo, LockGuardSrc, LockGuardType};
 use super::tracker::{Tracker, TrackerState};
@@ -11,7 +11,6 @@ use rustc_middle::mir::visit::{
     MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext,
 };
 use rustc_middle::mir::{Body, Local, LocalInfo, Place, ProjectionElem};
-use super::def_use::DefUseAnalysis;
 use std::collections::{HashMap, HashSet};
 
 pub fn collect_lockguard_info(

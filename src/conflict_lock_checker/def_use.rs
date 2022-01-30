@@ -28,7 +28,9 @@ pub struct Use {
 
 impl DefUseAnalysis {
     pub fn new(body: &Body<'_>) -> DefUseAnalysis {
-        DefUseAnalysis { info: IndexVec::from_elem_n(Info::new(), body.local_decls.len()) }
+        DefUseAnalysis {
+            info: IndexVec::from_elem_n(Info::new(), body.local_decls.len()),
+        }
     }
 
     pub fn analyze(&mut self, body: &Body<'_>) {
@@ -39,7 +41,7 @@ impl DefUseAnalysis {
             var_debug_info_index: 0,
             in_var_debug_info: false,
         };
-        finder.visit_body(&body);
+        finder.visit_body(body);
         self.info = finder.info
     }
 
@@ -109,7 +111,10 @@ impl Visitor<'_> for DefUseFinder {
 
 impl Info {
     fn new() -> Info {
-        Info { defs_and_uses: vec![], var_debug_info_indices: vec![] }
+        Info {
+            defs_and_uses: vec![],
+            var_debug_info_indices: vec![],
+        }
     }
 
     fn clear(&mut self) {
@@ -118,7 +123,10 @@ impl Info {
     }
 
     pub fn def_count(&self) -> usize {
-        self.defs_and_uses.iter().filter(|place_use| place_use.context.is_mutating_use()).count()
+        self.defs_and_uses
+            .iter()
+            .filter(|place_use| place_use.context.is_mutating_use())
+            .count()
     }
 
     pub fn def_count_not_including_drop(&self) -> usize {
@@ -132,7 +140,10 @@ impl Info {
     }
 
     pub fn use_count(&self) -> usize {
-        self.defs_and_uses.iter().filter(|place_use| place_use.context.is_nonmutating_use()).count()
+        self.defs_and_uses
+            .iter()
+            .filter(|place_use| !place_use.context.is_mutating_use())
+            .count()
     }
 }
 
@@ -144,7 +155,11 @@ struct MutateUseVisitor<'tcx> {
 
 impl<'tcx> MutateUseVisitor<'tcx> {
     fn new(query: Local, new_local: Local, tcx: TyCtxt<'tcx>) -> MutateUseVisitor<'tcx> {
-        MutateUseVisitor { query, new_local, tcx }
+        MutateUseVisitor {
+            query,
+            new_local,
+            tcx,
+        }
     }
 }
 

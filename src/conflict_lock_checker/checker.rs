@@ -55,7 +55,8 @@ impl ConflictLockChecker {
         }
         // println!("{}", crate_name);
         // collect fn
-        let ids = tcx.mir_keys(LOCAL_CRATE);
+        //let ids = tcx.mir_keys(LOCAL_CRATE);
+        let ids = tcx.mir_keys(());
         let fn_ids: Vec<LocalDefId> = ids
             .clone()
             .into_iter()
@@ -149,7 +150,7 @@ impl ConflictLockChecker {
             for (bb, callee_id) in callsites {
                 if let Some(context) = genkill.get_live_lockguards(bb) {
                     callchain.push((fn_id, *bb));
-                    self.check_fn(&tcx, *callee_id, context, &mut callchain);
+                    self.check_fn(tcx, *callee_id, context, &mut callchain);
                     callchain.pop();
                 }
             }

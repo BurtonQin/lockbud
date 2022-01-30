@@ -10,11 +10,10 @@
 /// then A depends on B by call
 extern crate rustc_hir;
 extern crate rustc_middle;
-extern crate rustc_mir;
 
+use super::def_use::DefUseAnalysis;
 use rustc_middle::mir::visit::*;
 use rustc_middle::mir::*;
-use super::def_use::DefUseAnalysis;
 
 use std::collections::HashMap;
 

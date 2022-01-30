@@ -29,7 +29,7 @@ fn show_help() {
 }
 
 fn show_version() {
-    println!("lock-bug-detect {}", "0.1.0");
+    println!("lock-bug-detect 0.1.0");
 }
 
 fn show_error(msg: String) -> ! {
@@ -71,8 +71,8 @@ fn in_cargo_lock_bug_detect() {
     };
     cmd.env("RUSTC", "rust-lock-bug-detector");
     cmd.env("RUST_BACKTRACE", "full");
-    let mut args = std::env::args().skip(skip);
-    while let Some(arg) = args.next() {
+    let args = std::env::args().skip(skip);
+    for arg in args {
         if arg == "--" {
             break;
         }
