@@ -89,6 +89,10 @@ fn run_compiler(mut args: Vec<String>, callbacks: &mut (dyn rustc_driver::Callba
             args.push(sysroot);
         }
     }
+    args.push("-Z".to_owned());
+    args.push("always-encode-mir".to_owned());
+    args.push("-Z".to_owned());
+    args.push("mir-opt-level=0".to_owned());
 
     // Invoke compiler, and handle return code.
     let exit_code = rustc_driver::catch_with_exit_code(move || {
