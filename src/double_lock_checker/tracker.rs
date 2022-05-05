@@ -151,7 +151,9 @@ impl<'a, 'b, 'c, 'tcx> Tracker<'a, 'b, 'c, 'tcx> {
         }
         let rhses = self.batch_depend_results.get_depends(place);
         let mut defs = rhses.iter().filter(|(_, result)| {
-            *result == DependResult::CallDepend || *result == DependResult::MoveDepend || *result == DependResult::CopyDepend
+            *result == DependResult::CallDepend
+                || *result == DependResult::MoveDepend
+                || *result == DependResult::CopyDepend
         });
         if defs.clone().count() > 1 {
             return None;

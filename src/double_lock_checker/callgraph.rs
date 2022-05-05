@@ -2,7 +2,7 @@ extern crate rustc_hir;
 extern crate rustc_middle;
 
 use super::def_use::DefUseAnalysis;
-use rustc_hir::def_id::{LocalDefId};
+use rustc_hir::def_id::LocalDefId;
 
 use rustc_middle::mir::*;
 use rustc_middle::ty::*;

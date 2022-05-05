@@ -1,6 +1,4 @@
 use std::sync;
-use spin;
-use parking_lot;
 
 struct Foo {
     mu1: sync::Arc<sync::Mutex<i32>>,
@@ -50,7 +48,7 @@ impl Foo {
     }
 
     fn std_rwlock_read_2(&self) {
-        *self.rw1.read().unwrap();
+        let _ = *self.rw1.read().unwrap();
     }
 
     fn std_rwlock_write_2(&self) {
@@ -83,7 +81,7 @@ impl Foo {
     }
 
     fn parking_lot_rwlock_read_2(&self) {
-        *self.rw2.read();
+        let _ = *self.rw2.read();
     }
 
     fn parking_lot_rwlock_write_2(&self) {
@@ -120,7 +118,7 @@ impl Foo {
     }
 
     fn spin_rwlock_read_2(&self) {
-        *self.rw3.read();
+        let _ = *self.rw3.read();
     }
 
     fn spin_rwlock_write_2(&self) {
@@ -129,5 +127,22 @@ impl Foo {
 }
 
 fn main() {
-    
+    let foo1 = Foo::new();
+    foo1.std_mutex_1();
+    foo1.std_mutex_2();
+    foo1.std_rwlock_read_1();
+    foo1.std_rwlock_write_1();
+    foo1.parking_lot_mutex_1();
+    foo1.parking_lot_mutex_2();
+    foo1.parking_lot_rwlock_read_1();
+    foo1.parking_lot_rwlock_read_2();
+    foo1.parking_lot_rwlock_write_1();
+    foo1.parking_lot_rwlock_write_2();
+    foo1.spin_mutex_1();
+    foo1.spin_mutex_2();
+    foo1.recur();
+    foo1.spin_rwlock_read_1();
+    foo1.spin_rwlock_read_2();
+    foo1.spin_rwlock_write_1();
+    foo1.spin_rwlock_write_2();
 }
