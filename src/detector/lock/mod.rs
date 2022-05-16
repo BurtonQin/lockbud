@@ -13,25 +13,25 @@ use report::{DeadlockDiagnosis, ReportContent};
 use crate::analysis::callgraph::{CallGraph, CallSiteLocation, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, ApproximateAliasKind};
 use crate::interest::concurrency::lock::{
-    DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardInfo, LockGuardMap,
+    DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap,
 };
 
 use petgraph::algo;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
-use petgraph::prelude::*;
+
 use petgraph::unionfind::UnionFind;
 use petgraph::visit::{
-    depth_first_search, Bfs, Control, DfsEvent, EdgeRef, IntoEdgesDirected, IntoNodeReferences,
-    NodeIndexable, Walker,
+    depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences,
+    NodeIndexable,
 };
-use petgraph::{Directed, Direction, Graph, Undirected};
+use petgraph::{Directed, Direction, Graph};
 
 use rustc_data_structures::graph::WithSuccessors;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{BasicBlock, Body, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
+use rustc_middle::mir::{Body, Location, Terminator, TerminatorKind};
+use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
 
 use std::collections::VecDeque;
 
@@ -238,7 +238,7 @@ impl PrunedLockGuardGraph {
         }
         // 2. outgoing edges of instance
         for (node_idx, src_instance_id) in lockguard_instance_graph.graph.node_references() {
-            let src_instance = callgraph.index_to_instance(*src_instance_id).unwrap();
+            let _src_instance = callgraph.index_to_instance(*src_instance_id).unwrap();
             for edge in lockguard_instance_graph
                 .graph
                 .edges_directed(node_idx, petgraph::Direction::Outgoing)
@@ -246,7 +246,7 @@ impl PrunedLockGuardGraph {
                 let target_instance_id = lockguard_instance_graph
                     .index_to_instance_id(edge.target())
                     .unwrap();
-                let target_instance = callgraph.index_to_instance(*target_instance_id).unwrap();
+                let _target_instance = callgraph.index_to_instance(*target_instance_id).unwrap();
                 let callchain = edge.weight();
                 if callchain.is_empty() {
                     // src_instance directly connects to target_instance
@@ -255,18 +255,17 @@ impl PrunedLockGuardGraph {
                         .find_edge(*src_instance_id, *target_instance_id)
                         .unwrap();
                     let path = callgraph.graph.edge_weight(edge).unwrap();
-                    if let CallSiteLocation::FnDef(first) = path[0] {
+                    let CallSiteLocation::FnDef(first) = path[0];
                         // path[0].successors filter return
                         let src_idx = self.graph.add_node((*src_instance_id, first));
                         let target_idx =
                             self.graph.add_node((*target_instance_id, Location::START));
                         self.graph.add_edge(src_idx, target_idx, Vec::new());
-                    }
                 } else {
-                    let first = lockguard_instance_graph
+                    let _first = lockguard_instance_graph
                         .index_to_instance_id(callchain[0])
                         .unwrap();
-                    let last = lockguard_instance_graph
+                    let _last = lockguard_instance_graph
                         .index_to_instance_id(callchain[callchain.len() - 1])
                         .unwrap();
                     // callgraph.graph.find_edge(src_instance_id, first);
@@ -986,7 +985,8 @@ impl ConflictLockGraph {
         dedup
     }
 
-    fn dot(&self) {
+    /// Print the ConflictGraph in dot format.
+    pub fn dot(&self) {
         println!(
             "{:?}",
             Dot::with_config(&self.graph, &[Config::GraphContentOnly])

@@ -49,12 +49,3 @@ pub enum Report {
     DoubleLock(ReportContent<DeadlockDiagnosis>),
     ConflictLock(ReportContent<Vec<DeadlockDiagnosis>>),
 }
-// pub struct Report {
-// BugKind
-// Possibility
-// Diagnosis
-// 	FirstLock: LockGuardTy, Span
-//  SecondLock: LockGuardTy, Span
-//  CallChains: [[FnName, Span]]
-// Explanation
-// }

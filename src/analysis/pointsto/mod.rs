@@ -1,4 +1,6 @@
-//! if two pointers point to the same local
+//! Points-to analysis.
+//! It checks if two pointers may point to the same memory cell.
+//! It depends on `CallGraph` and provides support for detectors.
 extern crate rustc_hash;
 extern crate rustc_hir;
 
@@ -11,7 +13,7 @@ use rustc_middle::mir::{
     Body, Constant, ConstantKind, Local, Location, Operand, Place, PlaceRef, ProjectionElem,
     Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
-use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
+use rustc_middle::ty::{Instance, TyCtxt};
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -40,7 +42,7 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
     }
 
     pub fn analyze(&mut self) {
-        let mut collector = ConstraintGraphCollector::new(self.body);
+        let mut collector = ConstraintGraphCollector::new();
         collector.visit_body(self.body);
         let mut graph = collector.finish();
         let mut worklist = VecDeque::new();
@@ -93,7 +95,7 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
         }
     }
 
-    // pts(target) = pts(target) U pts(source), return true if pts(target) changed
+    /// pts(target) = pts(target) U pts(source), return true if pts(target) changed
     fn union_pts(&mut self, target: &ConstraintNode<'tcx>, source: &ConstraintNode<'tcx>) -> bool {
         let old_len = self.pts.get(&target).unwrap().len();
         let source_pts = self.pts.get(source).unwrap().clone();
@@ -313,15 +315,14 @@ impl<'tcx> ConstraintGraph<'tcx> {
     }
 }
 
-struct ConstraintGraphCollector<'a, 'tcx> {
-    body: &'a Body<'tcx>,
+/// Generate `ConstraintGraph` by visiting MIR body.
+struct ConstraintGraphCollector<'tcx> {
     graph: ConstraintGraph<'tcx>,
 }
 
-impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
-    fn new(body: &'a Body<'tcx>) -> Self {
+impl<'tcx> ConstraintGraphCollector<'tcx> {
+    fn new() -> Self {
         Self {
-            body,
             graph: ConstraintGraph::default(),
         }
     }
@@ -330,21 +331,27 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
         let lhs_pattern = Self::process_place(place.as_ref());
         let rhs_pattern = Self::process_rvalue(rvalue);
         match (lhs_pattern, rhs_pattern) {
+            // a = &b
             (AccessPattern::Direct(lhs), Some(AccessPattern::Ref(rhs))) => {
                 self.graph.add_address(lhs, rhs);
             }
+            // a = b
             (AccessPattern::Direct(lhs), Some(AccessPattern::Direct(rhs))) => {
                 self.graph.add_copy(lhs, rhs);
             }
+            // a = Constant
             (AccessPattern::Direct(lhs), Some(AccessPattern::Constant(rhs))) => {
                 self.graph.add_copy_constant(lhs, rhs);
             }
+            // a = *b
             (AccessPattern::Direct(lhs), Some(AccessPattern::Indirect(rhs))) => {
                 self.graph.add_load(lhs, rhs);
             }
+            // *a = b
             (AccessPattern::Indirect(lhs), Some(AccessPattern::Direct(rhs))) => {
                 self.graph.add_store(lhs, rhs);
             }
+            // *a = Constant
             (AccessPattern::Indirect(lhs), Some(AccessPattern::Constant(rhs))) => {
                 self.graph.add_store_constant(lhs, rhs);
             }
@@ -380,9 +387,6 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
                 }
             }
             Rvalue::Ref(_, _, place) | Rvalue::AddressOf(_, place) => {
-                // if place is indirect then
-                // local, deref, field
-
                 Some(AccessPattern::Ref(place.as_ref()))
             }
             _ => None,
@@ -398,8 +402,8 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
-    fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
+impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'tcx> {
+    fn visit_statement(&mut self, statement: &Statement<'tcx>, _location: Location) {
         match &statement.kind {
             StatementKind::Assign(box (place, rvalue)) => {
                 self.process_assignment(place, rvalue);
@@ -417,10 +421,10 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
         }
     }
 
-    // Heuristically assumes that
-    // for callsites like `destination = call fn(move args[0])`,
-    // destination = args[0]
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
+    /// Heuristically assumes that
+    /// for callsites like `destination = call fn(move args[0])`,
+    /// destination = args[0]
+    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, _location: Location) {
         match &terminator.kind {
             TerminatorKind::Call {
                 func: _,
@@ -440,8 +444,9 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
     }
 }
 
-/// We do not use Must/May/Not since the pointer analysis implementation is
-/// overapproximate.
+/// We do not use Must/May/Not since the pointer analysis implementation is overapproximate.
+/// Instead, we use probably, possibly, unlikely as alias kinds.
+/// We will report bugs of probaly and possibly kinds.
 pub enum ApproximateAliasKind {
     Probably,
     Possibly,
@@ -449,12 +454,14 @@ pub enum ApproximateAliasKind {
     Unknown,
 }
 
+/// `AliasId` identifies a unique memory cell interprocedurally.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AliasId {
     pub instance_id: InstanceId,
     pub local: Local,
 }
 
+/// Basically, `AliasId` and `LockGuardId` share the same info.
 impl std::convert::From<LockGuardId> for AliasId {
     fn from(lockguard_id: LockGuardId) -> Self {
         Self {
@@ -464,16 +471,11 @@ impl std::convert::From<LockGuardId> for AliasId {
     }
 }
 
-// LockGuardId :: InstanceId X Local
-// AliasId :: DefId X Local
-// LockGuardToAliasId :: LockGuardId -> AliasId
-// InstanceIdToDefId =
-// CallGraph InstanceId -> Instance, Instance -> DefId
-// PointerAnalysis :: Body -> PointsToMap
-// Cache :: DefId -> PointsToMap
-// Alias :: AliasId -> AliasId -> AliasKind
+/// Alias analysis based on points-to info.
+/// It answers if two memory cells alias with each other.
+/// It performs an underlying points-to analysis if needed.
+/// The points-to info will be cached into `pts` for future queries.
 pub struct AliasAnalysis<'a, 'tcx> {
-    // DefId -> (ConstraintNode -> ConstraintNode)
     tcx: TyCtxt<'tcx>,
     callgraph: &'a CallGraph<'tcx>,
     pts: FxHashMap<DefId, PointsToMap<'tcx>>,
@@ -488,6 +490,7 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         }
     }
 
+    /// Check if two memory cells alias with each other.
     pub fn alias(&mut self, aid1: AliasId, aid2: AliasId) -> ApproximateAliasKind {
         let AliasId {
             instance_id: id1,
@@ -516,6 +519,9 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         }
     }
 
+    /// Get the points-to info from cache `pts`.
+    /// If not exists, then perform points-to analysis
+    /// and add the obtained points-to info to cache.
     fn get_or_insert_pts(&mut self, def_id: DefId, body: &Body<'tcx>) -> &PointsToMap<'tcx> {
         if self.pts.contains_key(&def_id) {
             self.pts.get(&def_id).unwrap()
@@ -527,8 +533,8 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         }
     }
 
-    // check alias of p1 and p2 if they are from the same fn
-    // if pts(p1) intersect pts(p2) != empty then they probably alias else unlikely
+    /// Check alias of p1 and p2 if they are from the same fn.
+    /// if pts(p1) intersect pts(p2) != empty then they probably alias else unlikely
     fn intraproc_alias(
         &mut self,
         def_id: DefId,
@@ -549,17 +555,17 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         }
     }
 
-    // check alias of p1 and p2 if they are from different fn
-    // To avoid interproc alias analysis, we use heuristic assumption:
-    // if exists a1 in pts(p1) and a1 is Constant(c1) and
-    //    exists a2 in pts(p2) and a2 is Constant(c2)
-    // then
-    //    if c1 == c2 then probably alias else unlikely
-    // elif exists a1 in pts(p1) and a1.local in Args(def_id1) and
-    //    exists a2 in pts(pt2) and a2.local in Args(def_id2) and
-    //    a1.local.ty == a2.local.ty and
-    //    a1.projection = a2.projection
-    // then possible alias else unlikely
+    /// Check alias of p1 and p2 if they are from different fn.
+    /// To avoid interproc alias analysis, we use heuristic assumption:
+    /// if exists a1 in pts(p1) and a1 is Constant(c1) and
+    ///    exists a2 in pts(p2) and a2 is Constant(c2)
+    /// then
+    ///    if c1 == c2 then probably alias else unlikely
+    /// elif exists a1 in pts(p1) and a1.local in Args(fn1) and
+    ///    exists a2 in pts(pt2) and a2.local in Args(fn2) and
+    ///    a1.local.ty == a2.local.ty and
+    ///    a1.projection = a2.projection
+    /// then possible alias else unlikely
     fn interproc_alias(
         &mut self,
         def_id1: DefId,
@@ -569,9 +575,6 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         instance2: &Instance<'tcx>,
         node2: &ConstraintNode<'tcx>,
     ) -> ApproximateAliasKind {
-        // println!("Interproc");
-        // println!("{:?}, {:?}", def_id1, def_id2);
-        // println!("{:?}, {:?}", node1, node2);
         let body1 = self.tcx.instance_mir(instance1.def);
         let body2 = self.tcx.instance_mir(instance2.def);
         let points_to_map1 = self.get_or_insert_pts(def_id1, body1).clone();
@@ -586,43 +589,26 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
             .iter()
             .filter(|node| matches!(node, &ConstraintNode::ConstantDeref(_)))
             .peekable();
-        if constants1.peek().is_some() && constants2.peek().is_some() {
-            if constants1.any(|c1| constants2.any(|c2| c2 == c1)) {
-                return ApproximateAliasKind::Probably;
-            }
+        if constants1.any(|c1| constants2.any(|c2| c2 == c1)) {
+            return ApproximateAliasKind::Probably;
         } else {
             let is_arg = |local: Local, body: &Body<'tcx>| -> bool {
-                for arg in body.args_iter() {
-                    if arg == local {
-                        return true;
-                    }
-                }
-                false
+                body.args_iter().any(|arg| arg == local)
             };
-            // println!("pts1: {:?}", pts1);
-            // println!("pts2: {:?}", pts2);
             let mut arg_places1 = pts1
                 .iter()
                 .filter_map(|node| match node {
                     ConstraintNode::Place(place) if is_arg(place.local, body1) => Some(place),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            // println!("arg_places1: {:?}", arg_places1);
+                });
             let mut arg_places2 = pts2
                 .iter()
                 .filter_map(|node| match node {
                     ConstraintNode::Place(place) if is_arg(place.local, body2) => Some(place),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            // println!("arg_places2: {:?}", arg_places2);
-            if arg_places1.iter().any(|place1| {
-                arg_places2.iter().any(|place2| {
-                    // println!("ty1: {}", body1.local_decls[place1.local].ty);
-                    // println!("ty2: {}", body1.local_decls[place2.local].ty);
-                    // println!("proj1: {:?}", place1.projection);
-                    // println!("proj2: {:?}", place2.projection);
+                });
+            if arg_places1.any(|place1| {
+                arg_places2.any(|place2| {
                     body1.local_decls[place1.local].ty == body2.local_decls[place2.local].ty
                         && place1.projection == place2.projection
                 })

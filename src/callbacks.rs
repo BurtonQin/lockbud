@@ -8,14 +8,14 @@ use crate::options::{CrateNameList, Options};
 use log::info;
 use rustc_driver::Compilation;
 use rustc_hir::def_id::LOCAL_CRATE;
-use rustc_interface::{interface, Queries};
+use rustc_interface::{interface};
 use rustc_middle::mir::mono::MonoItem;
-use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
+use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
 
 use crate::analysis::callgraph::CallGraph;
-use crate::analysis::pointsto::Andersen;
+
 use crate::detector::lock::DeadLockDetector;
-use crate::interest::concurrency::lock::{LockGuardCollector, LockGuardTy};
+
 pub struct LockBudCallbacks {
     options: Options,
     file_name: String,
@@ -81,8 +81,8 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
 }
 
 impl LockBudCallbacks {
-    fn analyze_with_lockbud<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
-        // skip crates by names (white or black list).
+    fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
+        // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
         match &self.options.crate_name_list {
             CrateNameList::White(crates) if !crates.contains(&crate_name) => return,

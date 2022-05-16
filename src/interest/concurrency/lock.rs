@@ -20,7 +20,7 @@ use smallvec::SmallVec;
 
 use rustc_hash::FxHashMap;
 use rustc_middle::mir::visit::{
-    MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext, Visitor,
+    MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor,
 };
 use rustc_middle::mir::{Body, Local, Location};
 use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
