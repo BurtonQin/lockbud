@@ -12,9 +12,9 @@ mod double_lock_checker;
 
 mod analysis;
 mod callbacks;
-mod options;
-mod interest;
 mod detector;
+mod interest;
+mod options;
 
 use options::Options;
 
@@ -182,25 +182,11 @@ fn main() {
                 rustc_command_line_arguments.push(always_encode_mir);
             }
 
-            // Replace ``mir-opt-level=?'' with ``mir-opt-level=0'' if exists
-            // to preserve StorageLive and StorageDead in MIR.
-            let mir_opt_level_eq: String = "mir-opt-level=".into();
-            let mut contained = false;
-            rustc_command_line_arguments.iter_mut().for_each(|arg| {
-                let len = arg.len() - 1;
-                if len >= mir_opt_level_eq.len()
-                    && arg[..len].ends_with(&mir_opt_level_eq)
-                    && &arg[len..] != "0"
-                {
-                    arg.replace_range(len.., "0");
-                    contained = true;
-                }
-            });
-            // If ``mir-opt-level=?'' not exists, add it to arguments.
-            if !contained {
-                rustc_command_line_arguments.push("-Z".into());
-                rustc_command_line_arguments.push("mir-opt-level=0".into());
-            }
+            // Disable this pass so as to preserve StorageLive and StorageDead in MIR.
+            let not_remove_storage_markers: String =
+                "mir-enable-passes=-RemoveStorageMarkers".into();
+            rustc_command_line_arguments.push("-Z".into());
+            rustc_command_line_arguments.push(not_remove_storage_markers);
         }
 
         let mut callbacks = callbacks::LockBudCallbacks::new(options);

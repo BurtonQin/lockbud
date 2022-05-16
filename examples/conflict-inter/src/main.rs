@@ -1,4 +1,5 @@
 use std::sync;
+use std::thread;
 
 struct Foo {
     mu1: sync::Arc<sync::Mutex<i32>>,
@@ -36,4 +37,12 @@ impl Foo {
     }
 }
 
-fn main() {}
+fn main() {
+    let foo = sync::Arc::new(Foo::new());
+    let foo1 = foo.clone();
+    let th = thread::spawn(move || {
+        foo1.std_mutex_1();
+    });
+    foo.std_rw_1();
+    th.join().unwrap();
+}

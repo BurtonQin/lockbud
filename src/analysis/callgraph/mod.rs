@@ -1,7 +1,7 @@
+use petgraph::algo;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
-use petgraph::unionfind::UnionFind;
-use petgraph::visit::{Bfs, EdgeRef, IntoNodeReferences, NodeIndexable};
+use petgraph::visit::{EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Graph};
 
 use rustc_middle::mir::visit::Visitor;
@@ -10,11 +10,15 @@ use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
 
 pub type InstanceId = NodeIndex;
 
+/// The location where caller calls callee.
+/// Support direct call for now, where callee resolves to FnDef.
+/// TODO(boqin): Add support for FnPtr.
 #[derive(Copy, Clone, Debug)]
 pub enum CallSiteLocation {
     FnDef(Location),
-    // FnPtr(Location),  // to be supported
+    // FnPtr(Location),
 }
+
 pub struct CallGraph<'tcx> {
     pub graph: Graph<Instance<'tcx>, Vec<CallSiteLocation>, Directed>,
 }
@@ -37,7 +41,12 @@ impl<'tcx> CallGraph<'tcx> {
         self.graph.node_weight(idx)
     }
 
-    pub fn analyze(&mut self, instances: Vec<Instance<'tcx>>, tcx: TyCtxt<'tcx>, param_env: ParamEnv<'tcx>) {
+    pub fn analyze(
+        &mut self,
+        instances: Vec<Instance<'tcx>>,
+        tcx: TyCtxt<'tcx>,
+        param_env: ParamEnv<'tcx>,
+    ) {
         let idx_insts = instances
             .into_iter()
             .map(|inst| {
@@ -51,15 +60,12 @@ impl<'tcx> CallGraph<'tcx> {
             if body.source.promoted.is_some() {
                 continue;
             }
-            let mut collector =
-                CallSiteCollector::new(caller, body, tcx, param_env);
+            let mut collector = CallSiteCollector::new(caller, body, tcx, param_env);
             collector.visit_body(body);
             for (callee, location) in collector.callsites() {
-                let callee_idx = if let Some(callee_idx) = self
-                    .instance_to_index(&callee) {
-                        callee_idx
-                    }
-                else {
+                let callee_idx = if let Some(callee_idx) = self.instance_to_index(&callee) {
+                    callee_idx
+                } else {
                     continue;
                 };
                 if let Some(edge_idx) = self.graph.find_edge(caller_idx, callee_idx) {
@@ -71,6 +77,20 @@ impl<'tcx> CallGraph<'tcx> {
                 }
             }
         }
+    }
+
+    pub fn callsites(
+        &self,
+        source: InstanceId,
+        target: InstanceId,
+    ) -> Option<Vec<CallSiteLocation>> {
+        let edge = self.graph.find_edge(source, target)?;
+        self.graph.edge_weight(edge).map(|cs| cs.clone())
+    }
+
+    pub fn all_simple_paths(&self, source: InstanceId, target: InstanceId) -> Vec<Vec<InstanceId>> {
+        algo::all_simple_paths::<Vec<_>, _>(&self.graph, source, target, 0, None)
+            .collect::<Vec<_>>()
     }
 
     // Print the callgraph in dot format
@@ -125,8 +145,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                 func_ty,
             );
             match *func_ty.kind() {
-                ty::FnDef(def_id, substs) =>
-                {
+                ty::FnDef(def_id, substs) => {
                     if let Some(callee) =
                         Instance::resolve(self.tcx, self.param_env, def_id, substs)
                             .ok()
@@ -136,7 +155,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                             .push((callee, CallSiteLocation::FnDef(location)));
                     }
                 }
-                _ => { }
+                _ => {}
             }
         }
     }

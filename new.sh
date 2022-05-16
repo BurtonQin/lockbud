@@ -13,10 +13,10 @@ export RUSTC_WRAPPER=${PWD}/target/debug/rust-lock-bug-detector
 export RUST_BACKTRACE=full
 # export RUSTC_LOG=info
 export LOCKBUD_LOG=debug
-export LOCKBUD_FLAGS="-k doublelock -l inter -d 4 -n 10000"
+export LOCKBUD_FLAGS="-k doublelock -d 4 -n 10000"
 
 cargo_dir_file=$(realpath $DIR/cargo_dir.txt)
-rm $cargo_dir_file
+rm -f $cargo_dir_file
 touch $cargo_dir_file
 
 pushd "$1" > /dev/null

@@ -13,8 +13,9 @@ use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
 
 use crate::analysis::callgraph::CallGraph;
-use crate::interest::concurrency::lock::{LockGuardTy, LockGuardCollector};
+use crate::analysis::pointsto::Andersen;
 use crate::detector::lock::DeadLockDetector;
+use crate::interest::concurrency::lock::{LockGuardCollector, LockGuardTy};
 pub struct LockBudCallbacks {
     options: Options,
     file_name: String,
@@ -108,11 +109,22 @@ impl LockBudCallbacks {
         let param_env = ParamEnv::reveal_all();
         callgraph.analyze(instances.clone(), tcx, param_env);
         callgraph.dot();
-        // let mut lockguard_instance_graph = LockGuardInstanceGraph::new();
-        // lockguard_instance_graph.analyze(&callgraph, tcx, param_env);
-        // lockguard_instance_graph.dot();
+        let mut lockguard_instance_graph = LockGuardInstanceGraph::new();
+        lockguard_instance_graph.analyze(&callgraph, tcx, param_env);
+        lockguard_instance_graph.dot();
         let mut deadlock_detector = DeadLockDetector::new(tcx, param_env);
         deadlock_detector.detect(&callgraph);
-        println!("relations: {:?}", deadlock_detector.lockguard_relations);
+        // println!("relations: {:?}", deadlock_detector.lockguard_relations);
+        // for instance in instances {
+        //     let body = tcx.instance_mir(instance.def);
+        //     if body.source.promoted.is_some() {
+        //         continue;
+        //     }
+        //     println!("{:?}", instance.def_id());
+        //     let mut pointer_analysis = Andersen::new(body);
+        //     pointer_analysis.analyze();
+        //     let pts = pointer_analysis.finish();
+        //     println!("{:#?}", pts);
+        // }
     }
 }
