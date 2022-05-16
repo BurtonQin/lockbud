@@ -1,8 +1,4 @@
-//! LockBugDetector: detects doublelock and conflictlock
-//! bfs each WCC of callgraph
-//! if instance contains lockguards then make it vertex
-//! else push it to path
-//! so as to build a new LockGuardCallGraph
+//! DeadlockDetector: detects doublelock and conflictlock.
 extern crate rustc_data_structures;
 extern crate rustc_hash;
 
@@ -20,326 +16,17 @@ use petgraph::algo;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 
-use petgraph::unionfind::UnionFind;
-use petgraph::visit::{
-    depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences,
-    NodeIndexable,
-};
+use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Direction, Graph};
 
 use rustc_data_structures::graph::WithSuccessors;
 use rustc_hash::{FxHashMap, FxHashSet};
-use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
+use rustc_middle::mir::{Body, Location};
+use rustc_middle::ty::{ParamEnv, TyCtxt};
 
 use std::collections::VecDeque;
 
-use smallvec::SmallVec;
-
-pub struct LockGuardInstanceGraph<'tcx> {
-    pub graph: Graph<InstanceId, Vec<InstanceId>, Directed>,
-    lockguard_instances: FxHashMap<InstanceId, LockGuardMap<'tcx>>,
-}
-
-// The immutable context when dfs recursively visit instances with lockguards
-
-struct LockGuardInstanceContext<'a, 'b, 'c, 'tcx> {
-    start: InstanceId,
-    callgraph: &'a CallGraph<'tcx>,
-    lockguard_instances: &'b FxHashMap<InstanceId, LockGuardMap<'tcx>>,
-    lockguard_instance_ids: &'c FxHashMap<InstanceId, NodeIndex>,
-}
-
-impl<'a, 'b, 'c, 'tcx> LockGuardInstanceContext<'a, 'b, 'c, 'tcx> {
-    fn new(
-        start: InstanceId,
-        callgraph: &'a CallGraph<'tcx>,
-        lockguard_instances: &'b FxHashMap<InstanceId, LockGuardMap<'tcx>>,
-        lockguard_instance_ids: &'c FxHashMap<InstanceId, NodeIndex>,
-    ) -> Self {
-        Self {
-            start,
-            callgraph,
-            lockguard_instances,
-            lockguard_instance_ids,
-        }
-    }
-}
-
-impl<'tcx> LockGuardInstanceGraph<'tcx> {
-    pub fn new() -> Self {
-        Self {
-            graph: Graph::new(),
-            lockguard_instances: FxHashMap::default(),
-        }
-    }
-
-    pub fn analyze(
-        &mut self,
-        callgraph: &CallGraph<'tcx>,
-        tcx: TyCtxt<'tcx>,
-        param_env: ParamEnv<'tcx>,
-    ) {
-        // filter local instances with lockguards in it.
-        let mut lockguard_instances = FxHashMap::default();
-        let mut lockguard_instance_ids = FxHashMap::default();
-        for (instance_id, instance) in callgraph.graph.node_references() {
-            if !instance.def_id().is_local() {
-                continue;
-            }
-            let body = tcx.instance_mir(instance.def);
-            let mut lockguard_collector =
-                LockGuardCollector::new(instance_id, instance, body, tcx, param_env);
-            lockguard_collector.analyze();
-            if !lockguard_collector.lockguards.is_empty() {
-                let lockguard_instance_id = self.graph.add_node(instance_id);
-                lockguard_instance_ids.insert(instance_id, lockguard_instance_id);
-                // println!("{:?}: {:?}", instance_id, instance);
-                lockguard_instances.insert(instance_id, lockguard_collector.lockguards);
-            }
-        }
-        // find all paths between the instances with lockguards
-        for (instance_id, _) in lockguard_instances.iter() {
-            self.dfs_visit_lockguard_instance(
-                *instance_id,
-                callgraph,
-                &lockguard_instances,
-                &lockguard_instance_ids,
-            );
-        }
-        self.lockguard_instances = lockguard_instances;
-    }
-
-    // find all paths between the starting lockguard instance and the first met lockguard instance
-    fn dfs_visit_lockguard_instance(
-        &mut self,
-        start: InstanceId,
-        callgraph: &CallGraph<'tcx>,
-        lockguard_instances: &FxHashMap<InstanceId, LockGuardMap<'tcx>>,
-        lockguard_instance_ids: &FxHashMap<InstanceId, NodeIndex>,
-    ) {
-        let mut visited = FxHashSet::default();
-        let mut path = Vec::new();
-        let context = LockGuardInstanceContext::new(
-            start,
-            callgraph,
-            lockguard_instances,
-            lockguard_instance_ids,
-        );
-        self.dfs_visit_lockguard_instance_recur(start, &mut visited, &mut path, &context);
-    }
-
-    fn dfs_visit_lockguard_instance_recur(
-        &mut self,
-        curr: InstanceId,
-        visited: &mut FxHashSet<InstanceId>,
-        path: &mut Vec<InstanceId>,
-        context: &LockGuardInstanceContext,
-    ) {
-        // println!("curr: {:?}", curr);
-        visited.insert(curr);
-        path.push(curr);
-        // println!("path: {:?}", path);
-        // the first met lockguard instance
-        if curr != context.start && context.lockguard_instances.contains_key(&curr) {
-            let start_node = context.lockguard_instance_ids[&context.start];
-            let curr_node = context.lockguard_instance_ids[&curr];
-            self.graph.add_edge(start_node, curr_node, path.clone());
-        } else {
-            for n in context.callgraph.graph.neighbors(curr) {
-                if !visited.contains(&n) {
-                    self.dfs_visit_lockguard_instance_recur(n, visited, path, context);
-                }
-            }
-        }
-        path.pop();
-        visited.remove(&curr);
-    }
-
-    pub fn weak_connected_component_roots(&self) -> Vec<NodeIndex> {
-        let mut vertex_sets = UnionFind::new(self.graph.node_bound());
-        for edge in self.graph.edge_references() {
-            let (a, b) = (edge.source(), edge.target());
-            // union the two vertices of the edge
-            vertex_sets.union(self.graph.to_index(a), self.graph.to_index(b));
-        }
-
-        let mut labels = vertex_sets.into_labeling();
-        labels.sort();
-        labels.dedup();
-        labels.into_iter().map(|u| NodeIndex::new(u)).collect()
-    }
-
-    pub fn index_to_instance_id(&self, idx: NodeIndex) -> Option<&InstanceId> {
-        self.graph.node_weight(idx)
-    }
-
-    // Print the callgraph in dot format
-    pub fn dot(&self) {
-        println!(
-            "{:?}",
-            Dot::with_config(&self.graph, &[Config::GraphContentOnly])
-        );
-    }
-}
-
-// CallGraph<ID> -> LGCallGraph<ID> -> PrunedLGCallGraph(ID x Location)
-// PrunedLockGuardGraph
-// Graph: <(InstanceId, Location), CallChain>
-// interest: Location is START, return, resume, callsites, gen, kill
-
-pub type LocationId = (InstanceId, Location);
-
-// Locations of Interest
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum LocationKind {
-    Start(LocationId),
-    Return(LocationId),
-    Resume(LocationId),
-    CallSite(LocationId),
-    ReturnSite(LocationId),
-    ResumeSite(LocationId),
-    Gen(LocationId),
-    Kill(LocationId),
-}
-pub struct PrunedLockGuardGraph {
-    graph: Graph<LocationId, Vec<(InstanceId, Location)>>,
-    location_kinds: FxHashSet<LocationKind>,
-}
-
-impl PrunedLockGuardGraph {
-    fn analyze<'tcx>(
-        &mut self,
-        lockguard_instance_graph: &LockGuardInstanceGraph<'tcx>,
-        callgraph: &CallGraph<'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) {
-        // 1. collect return resume locations of instance from Graph
-        // 2. collect the outgoing edges of instance on Graph
-        // 3. for each edge(from: inst1=instance, to: inst2, weight=path):
-        //      add edge(inst1.path[0], inst2.start, weight=path[1:])
-        //      add edge(inst2.return, inst1.path[0].succ[return], weight)
-        //      add edge(inst2.return, inst1.path[0].succ[resume], weight) if exists loc in path[1:]: loc.succ has resume
-        //      add edge(inst2.resume, inst1.path[0].succ[resume], weight)
-        // 4. collect gen/kill locations of instance from lockguard_instances
-        // 5. for each gen/kill/start/return/resume location loc:
-        //      dfs_visit(loc) to add edge between locs
-        //
-        // 1. instance_id -> return/resume
-        let mut returns = FxHashMap::default();
-        let mut resumes = FxHashMap::default();
-        for (_, instance_id) in lockguard_instance_graph.graph.node_references() {
-            let instance = callgraph.index_to_instance(*instance_id).unwrap();
-            let collector = Self::collect_return_resume(instance, tcx);
-            let (collector_returns, collector_resumes) = (collector.returns, collector.resumes);
-            returns.insert(*instance_id, collector_returns);
-            resumes.insert(*instance_id, collector_resumes);
-        }
-        // 2. outgoing edges of instance
-        for (node_idx, src_instance_id) in lockguard_instance_graph.graph.node_references() {
-            let _src_instance = callgraph.index_to_instance(*src_instance_id).unwrap();
-            for edge in lockguard_instance_graph
-                .graph
-                .edges_directed(node_idx, petgraph::Direction::Outgoing)
-            {
-                let target_instance_id = lockguard_instance_graph
-                    .index_to_instance_id(edge.target())
-                    .unwrap();
-                let _target_instance = callgraph.index_to_instance(*target_instance_id).unwrap();
-                let callchain = edge.weight();
-                if callchain.is_empty() {
-                    // src_instance directly connects to target_instance
-                    let edge = callgraph
-                        .graph
-                        .find_edge(*src_instance_id, *target_instance_id)
-                        .unwrap();
-                    let path = callgraph.graph.edge_weight(edge).unwrap();
-                    let CallSiteLocation::FnDef(first) = path[0];
-                        // path[0].successors filter return
-                        let src_idx = self.graph.add_node((*src_instance_id, first));
-                        let target_idx =
-                            self.graph.add_node((*target_instance_id, Location::START));
-                        self.graph.add_edge(src_idx, target_idx, Vec::new());
-                } else {
-                    let _first = lockguard_instance_graph
-                        .index_to_instance_id(callchain[0])
-                        .unwrap();
-                    let _last = lockguard_instance_graph
-                        .index_to_instance_id(callchain[callchain.len() - 1])
-                        .unwrap();
-                    // callgraph.graph.find_edge(src_instance_id, first);
-                }
-            }
-        }
-    }
-
-    fn collect_return_resume<'tcx>(
-        instance: &Instance<'tcx>,
-        tcx: TyCtxt<'tcx>,
-    ) -> ReturnResumeLocationCollector {
-        let body = tcx.instance_mir(instance.def);
-        let mut collector = ReturnResumeLocationCollector::new();
-        collector.visit_body(body);
-        collector
-    }
-}
-
-pub struct ReturnResumeLocationCollector {
-    returns: SmallVec<[Location; 4]>,
-    resumes: SmallVec<[Location; 4]>,
-}
-
-impl ReturnResumeLocationCollector {
-    pub fn new() -> Self {
-        Self {
-            returns: Default::default(),
-            resumes: Default::default(),
-        }
-    }
-}
-
-impl<'tcx> Visitor<'tcx> for ReturnResumeLocationCollector {
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
-        match terminator.kind {
-            TerminatorKind::Return => {
-                self.returns.push(location);
-            }
-            TerminatorKind::Resume => {
-                self.resumes.push(location);
-            }
-            _ => {}
-        }
-    }
-}
-
-// collect lockguards from callgraph: get inst -> lockguards
-// worklist SCC of callgraph if exists inst in SCC s.t. inst contains lockguard
-// contexts of insts are empty
-// for instance in worklist SCC
-// analyze instance:
-// if instance contains lockguards
-//  forall locations: state[locations] = empty
-//  state[START] = contexts[instance]
-//  for loc in worklist Locations:
-//    for succ in successors of location:
-//       check(state[loc] \ kill[loc], gen[loc])
-//       new = state[loc] \ kill[loc] U gen[loc]
-//       if new != state[loc]:
-//         worklist.push(new)
-//         if succ is Callsite(callee):
-//           new_ctxt = contexts[callee] U new
-//           if new_ctxt != contexts[callee]:
-//             worklist<instance> push(callee)
-//             contexts[callee] = new_ctxt
-// else:
-//    for callsite(callee) in instance
-//       new_ctxt = contexts[callee] U contexts[callee]
-//       if new_ctxt != contexts[callee]:
-//         worklist<instance> push(callee)
-//         context_callee = new_ctxt
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct LiveLockGuards(FxHashSet<LockGuardId>);
 
 impl LiveLockGuards {
@@ -365,19 +52,13 @@ impl LiveLockGuards {
     }
 }
 
-impl Default for LiveLockGuards {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-pub struct DeadLockDetector<'tcx> {
+pub struct DeadlockDetector<'tcx> {
     tcx: TyCtxt<'tcx>,
     param_env: ParamEnv<'tcx>,
     pub lockguard_relations: FxHashSet<(LockGuardId, LockGuardId)>,
 }
 
-impl<'tcx> DeadLockDetector<'tcx> {
+impl<'tcx> DeadlockDetector<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, param_env: ParamEnv<'tcx>) -> Self {
         Self {
             tcx,
@@ -392,7 +73,7 @@ impl<'tcx> DeadLockDetector<'tcx> {
     ) -> FxHashMap<InstanceId, LockGuardMap<'tcx>> {
         let mut lockguards = FxHashMap::default();
         for (instance_id, instance) in callgraph.graph.node_references() {
-            // only analyze local fn
+            // Only analyze local fn
             if !instance.def_id().is_local() {
                 continue;
             }
@@ -407,48 +88,32 @@ impl<'tcx> DeadLockDetector<'tcx> {
         lockguards
     }
 
-    pub fn detect(&mut self, callgraph: &CallGraph<'tcx> /* pointer_analysis */) {
+    /// Detect deadlock inter-procedurally and returns bug report.
+    pub fn detect(&mut self, callgraph: &CallGraph<'tcx>) -> Vec<Report> {
         let lockguards = self.collect_lockguards(callgraph);
-        // println!("lockguards: {:?}", lockguards.keys());
-        // collect wcc (weak connected components)
-
-        // for root in callgraph.weak_connected_component_roots() {
-        // collect all the nodes in wcc, starting with root
         let mut worklist = VecDeque::new();
         for (id, _) in callgraph.graph.node_references() {
             worklist.push_back(id);
         }
-        // callgraph.bfs_visit(root, |id| worklist.push_back(id));
-        // println!("worklist: {:?}", worklist);
-        // skip wcc without lockguards
-        // if !worklist.iter().any(|id| lockguards.contains_key(&id)) {
-        // 	continue;
-        // }
-        // contexts record live lockguards before calling each instance, init empty
+        // `contexts` records live lockguards before calling each instance, init empty
         let mut contexts = worklist
             .iter()
             .copied()
             .map(|id| (id, LiveLockGuards::default()))
             .collect::<FxHashMap<_, _>>();
-        // the fixed-point algorithm
+        // The fixed-point algorithm
         while let Some(id) = worklist.pop_front() {
             if let Some(lockguard_info) = lockguards.get(&id) {
-                // interproc gen kill on each instance
                 let instance = callgraph.index_to_instance(id).unwrap();
                 let body = self.tcx.instance_mir(instance.def);
                 let context = contexts[&id].clone();
-                // println!("instance: {:?}", instance);
                 let states = self.intraproc_gen_kill(body, &context, lockguard_info);
-                // println!(
-                //     "states: {:#?}",
-                //     states.iter().collect::<std::collections::BTreeMap<_, _>>()
-                // );
                 for edge in callgraph.graph.edges_directed(id, Direction::Outgoing) {
                     let callee = edge.target();
                     let callsite = edge.weight();
                     for callsite_loc in callsite {
                         let CallSiteLocation::FnDef(loc) = callsite_loc;
-                        let callsite_state = states[&loc].clone();
+                        let callsite_state = states[loc].clone();
                         let changed = contexts
                             .get_mut(&callee)
                             .unwrap()
@@ -470,25 +135,15 @@ impl<'tcx> DeadLockDetector<'tcx> {
             }
         }
 
-        // lockguard_relations
-        // map to lockguard info
+        // Get lockguard info
         let mut info = FxHashMap::default();
         for (_, map) in lockguards.into_iter() {
             info.extend(map.into_iter());
         }
-        // for (pred, curr) in &self.lockguard_relations {
-        // 	// println!("{:?}, {:?}", info[&pred], info[&curr]);
-        // 	if info[&pred].lockguard_ty.deadlock_with(&info[&curr].lockguard_ty) {
-        // 		println!("deadlock: {:?}\n{:?}", info[&pred], info[&curr]);
-        // 	} else if info[&pred].lockguard_ty.may_deadlock_with(&info[&curr].lockguard_ty) {
-        // 		println!("may deadlock: {:?}\n{:?}", info[&pred], info[&curr]);
-        // 	}
-        // }
-        println!("{:#?}", info);
-        self.deadlock_candidate_graph(&info, callgraph);
-        // }
+        self.detect_deadlock(&info, callgraph)
     }
 
+    /// Collect gen/kill info for related locations.
     fn location_to_live_lockguards(
         lockguard_map: &LockGuardMap<'tcx>,
     ) -> (
@@ -508,30 +163,14 @@ impl<'tcx> DeadLockDetector<'tcx> {
         (gen_map, kill_map)
     }
 
-    // LockGuard Relation: Cartesian product of LockGuard. `pre` not dropped when `curr` becomes live
-    // pred \ curr -> curr
-    fn check_lockguard_relation(
-        pred: &LiveLockGuards,
-        curr: &LiveLockGuards,
-    ) -> FxHashSet<(LockGuardId, LockGuardId)> {
-        let mut relation = FxHashSet::default();
-        for new in pred
-            .raw_lockguard_ids()
-            .difference(&curr.raw_lockguard_ids())
-        {
-            for c in curr.raw_lockguard_ids() {
-                relation.insert((*new, *c));
-            }
-        }
-        relation
-    }
-
+    /// state' = state \ kill U gen
+    /// return lockguard relation(a, b) where a is still live when b becomes live.
     fn apply_gen_kill(
         state: &mut LiveLockGuards,
         gen: Option<&LiveLockGuards>,
         kill: Option<&LiveLockGuards>,
     ) -> FxHashSet<(LockGuardId, LockGuardId)> {
-        // first kill, then gen
+        // First kill, then gen
         if let Some(kill) = kill {
             state.difference_in_place(kill);
         }
@@ -547,6 +186,7 @@ impl<'tcx> DeadLockDetector<'tcx> {
         relations
     }
 
+    /// Apply Gen/Kill to get live lockguards for each location in the same fn.
     fn intraproc_gen_kill(
         &mut self,
         body: &'tcx Body<'tcx>,
@@ -601,36 +241,19 @@ impl<'tcx> DeadLockDetector<'tcx> {
         states
     }
 
-    // Graph G
-    // for each relation(a, b)
-    //   for each relation(c, d)
-    //     if b.deadlock_with(c)
-    //       G.add_edge (a,b) -> (c,d)
-    // for each cycle in G
-    //   add cycle to deadlock candidate
-    // for each deadlock candidate
-    //   for each edge(a, b) in candidate
-    //     verify a b from the same lock
-    //   if all edges pass verification
-    //     report deadlock candidate as deadlock
-    fn deadlock_candidate_graph(
+    /// First detect doublelock on each relation(a, b),
+    /// use non-doublelock relations to build `ConflictLockGraph`.
+    /// Then find the cycles in `ConflictLockGraph` as conflictlock.
+    fn detect_deadlock(
         &self,
         lockguards: &LockGuardMap<'tcx>,
         callgraph: &CallGraph<'tcx>,
-    ) {
+    ) -> Vec<Report> {
         let mut reports = Vec::new();
-        // TODO(boqin): extract this graph
         let mut conflictlock_graph = ConflictLockGraph::new();
         let mut relation_to_nodes = FxHashMap::default();
-        println!(
-            "lockguard_relations: {:#?}",
-            self.lockguard_relations
-                .iter()
-                .map(|(a, b)| (&lockguards[a].span, &lockguards[b].span))
-                .collect::<Vec<_>>()
-        );
         let mut alias_analysis = AliasAnalysis::new(self.tcx, callgraph);
-        // detect doublelock:
+        // Detect doublelock:
         // forall relation(a, b): deadlock(a, b) => doublelock(a, b)
         for (a, b) in &self.lockguard_relations {
             let possibility = deadlock_possibility(a, b, lockguards, &mut alias_analysis);
@@ -643,7 +266,6 @@ impl<'tcx> DeadLockDetector<'tcx> {
                         diagnosis,
                         "The first lock is not released when acquiring the second lock".to_owned(),
                     ));
-                    println!("{:?}", report);
                     reports.push(report);
                 }
                 _ => {
@@ -653,7 +275,7 @@ impl<'tcx> DeadLockDetector<'tcx> {
                 }
             }
         }
-        // detect conflictlock:
+        // Detect conflictlock:
         // forall relation(a, b), relation(c, d): deadlock(b, c) and deadlock(d, a) => conflictlock((a, b), (c, d))
         // forall relation(a, b), relation(c, d), relation(e, f): deadlock(b, c) and deadlock(d, e) and deadlock(f, a) => conflictlock((a, b), (c, d), (e, f))
         // ...
@@ -670,147 +292,30 @@ impl<'tcx> DeadLockDetector<'tcx> {
                 };
             }
         }
-        conflictlock_graph.dot();
-
-        // debug print back_edges
-        // let lockguard_id_to_span = |id: &LockGuardId| lockguards[id].span;
-        // let relation_id_to_lockguard_id_pair = |relation_id: NodeIndex | graph.node_weight(relation_id).unwrap();
-        // let to_span = |id: NodeIndex| {
-        //     let (a, b) = relation_id_to_lockguard_id_pair(id);
-        //     (lockguard_id_to_span(a), lockguard_id_to_span(b))
-        // };
-        // println!("back_edges: {:#?}", back_edges.iter().map(|(relation_id1, relation_id2)| (to_span(*relation_id1), to_span(*relation_id2))).collect::<Vec<_>>());
-
         let cycle_paths = conflictlock_graph.cycle_paths();
-        println!("cycle_paths: {:#?}", cycle_paths);
-        // map Vec<RelationId> to Vec<(LockGuardId, LockGuardId)> then to Vec<DeadlockDiagnosis>
-        let diagnosis = cycle_paths
-            .into_iter()
-            .map(|path| {
-                let diagnosis = path
-                    .into_iter()
-                    .map(|relation_id| {
-                        let (a, b) = conflictlock_graph.node_weight(relation_id).unwrap();
-                        diagnose_one_relation(a, b, lockguards, callgraph, self.tcx)
-                    })
-                    .collect::<Vec<_>>();
-                let report = report::Report::ConflictLock(ReportContent::new(
-                    "ConflictLock".to_owned(),
-                    "Possibly".to_owned(),
-                    diagnosis,
-                    "Locks mutually wait for each other to form a cycle".to_owned(),
-                ));
-                println!("{:?}", report);
-                reports.push(report);
-            })
-            .collect::<Vec<_>>();
-        // let cycle_paths = cycle_paths.into_iter().map(|vec| {
-        //     vec.into_iter()
-        //         .map(|idx| graph.node_weight(idx).unwrap())
-        //         .collect::<Vec<_>>()
-        // });
-
-        // (LockGuardId, LockGuardId) -> ((LockGuardTy, Span), (LockGuardTy, Span), [[CallSite]])
-        // let diagnosis = cycle_paths
-        //     .map(|path| {
-        //         path.into_iter().map(|(a, b)| {
-        //             let (ty1, span1, ty2, span2) = (
-        //                 format!("{:?}", lockguards[&a].lockguard_ty),
-        //                 format!("{:?}", lockguards[&a].span),
-        //                 format!("{:?}", lockguards[&b].lockguard_ty),
-        //                 format!("{:?}", lockguards[&b].span),
-        //             );
-        //             let callchains = if a.instance_id == b.instance_id {
-        //                 vec![]
-        //             } else {
-        //                 let paths = callgraph.all_simple_paths(a.instance_id, b.instance_id);
-        //                 paths
-        //                     .into_iter()
-        //                     .map(|vec| {
-        //                         vec.iter()
-        //                             .zip(vec.iter().skip(1))
-        //                             .map(|(instance_id1, instance_id2)| {
-        //                                 let instance1 =
-        //                                     callgraph.index_to_instance(*instance_id1).unwrap();
-        //                                 let body1 = self.tcx.instance_mir(instance1.def);
-        //                                 let callsites = callgraph
-        //                                     .callsites(*instance_id1, *instance_id2)
-        //                                     .unwrap();
-        //                                 let callsites = callsites
-        //                                     .into_iter()
-        //                                     .map(|location| {
-        //                                         let CallSiteLocation::FnDef(location) =
-        //                                             location;
-        //                                         format!(
-        //                                             "{:?}",
-        //                                             body1.source_info(location).span
-        //                                         )
-        //                                     })
-        //                                     .collect::<Vec<_>>();
-        //                                 callsites
-        //                             })
-        //                             .collect::<Vec<_>>()
-        //                     })
-        //                     .collect::<Vec<_>>()
-        //             };
-        //             ((ty1, span1), (ty2, span2), callchains)
-        //         }).collect::<Vec<_>>()
-        //     })
-        //     .collect::<Vec<_>>();
-        println!("{:#?}", diagnosis);
-
-        // (iid1: id1.instance_id, iid2: id2.instance_id)
-        // callgaph iid1 -> instance, -> def_id
-        // callchain
-        //
-        // let fn_names = path
-        //     .iter()
-        //     .map(|instance_id| {
-        //         let def_id =
-        //             callgraph.index_to_instance(*instance_id).unwrap().def_id();
-        //         self.tcx.def_path_debug_str(def_id)
-        //     })
-        //     .collect::<Vec<_>>();
-        // println!("{:?}", fn_names);
-        // let mut callsite_spans = vec![vec![format!("{:?}", span1)]];
-        // let mut callsite_spans = Vec::new();
-        // callsite_spans.extend(path.iter().zip(path.iter().skip(1)).map(
-        //     |(instance_id1, instance_id2)| {
-        //         let body1 = self.tcx.instance_mir(
-        //             callgraph.index_to_instance(*instance_id1).unwrap().def,
-        //         );
-        //         let callsite_locations =
-        //             callgraph.callsites(*instance_id1, *instance_id2).unwrap();
-        //         callsite_locations
-        //             .into_iter()
-        //             .map(|location| {
-        //                 let CallSiteLocation::FnDef(location) = location;
-        //                 format!("{:?}", body1.source_info(location).span)
-        //             })
-        //             .collect::<Vec<_>>()
-        //     },
-        // ));
-        // let callchain = callsite_spans
-        //     .into_iter()
-        //     .zip(fn_names.into_iter())
-        //     .collect::<Vec<_>>();
-        // callchains.push(callchain);
-        // }
-        // println!("callchains: {:?}", callchains);
-        // let mut relation_loops = Vec::new();
-        // for path in paths {
-        //  	let relation_loop: Vec<_> = path.into_iter().map(|n| graph.node_weight(n).unwrap()).map(|(a, b)| (&lockguards[a].span, &lockguards[b].span)).collect();
-        //  	println!("deadlock path: {:#?}", relation_loop);
-        //     //  let mut callchains = Vec::new();
-
-        // }
-        // }
+        for path in cycle_paths {
+            let diagnosis = path
+                .into_iter()
+                .map(|relation_id| {
+                    let (a, b) = conflictlock_graph.node_weight(relation_id).unwrap();
+                    diagnose_one_relation(a, b, lockguards, callgraph, self.tcx)
+                })
+                .collect::<Vec<_>>();
+            let report = report::Report::ConflictLock(ReportContent::new(
+                "ConflictLock".to_owned(),
+                "Possibly".to_owned(),
+                diagnosis,
+                "Locks mutually wait for each other to form a cycle".to_owned(),
+            ));
+            reports.push(report);
+        }
+        reports
     }
 }
 
-// check deadlock possibility.
-// for two lockguards, first check if their types may deadlock;
-// if so, then check if they may alias.
+/// Check deadlock possibility.
+/// for two lockguards, first check if their types may deadlock;
+/// if so, then check if they may alias.
 fn deadlock_possibility<'tcx>(
     a: &LockGuardId,
     b: &LockGuardId,
@@ -836,7 +341,7 @@ fn deadlock_possibility<'tcx>(
     }
 }
 
-// generate doublelock diagnosis
+/// Generate doublelock diagnosis.
 fn diagnose_doublelock<'tcx>(
     a: &LockGuardId,
     b: &LockGuardId,
@@ -847,7 +352,7 @@ fn diagnose_doublelock<'tcx>(
     diagnose_one_relation(a, b, lockguards, callgraph, tcx)
 }
 
-// find all the callchains: source -> target
+/// Find all the callchains: source -> target
 // e.g., for one path: source --|callsites1|--> medium --|callsites2|--> target,
 // first extract callsite locations on edge, namely, [callsites1, callsites2],
 // then map locations to spans [spans1, spans2].
@@ -884,7 +389,7 @@ fn track_callchains<'tcx>(
     }
 }
 
-// find the diagnosis info for relation(a, b), including a's ty & span, b's ty & span, and callchains.
+// Find the diagnosis info for relation(a, b), including a's ty & span, b's ty & span, and callchains.
 fn diagnose_one_relation<'tcx>(
     a: &LockGuardId,
     b: &LockGuardId,
@@ -892,8 +397,8 @@ fn diagnose_one_relation<'tcx>(
     callgraph: &CallGraph<'tcx>,
     tcx: TyCtxt<'tcx>,
 ) -> DeadlockDiagnosis {
-    let a_info = &lockguards[&a];
-    let b_info = &lockguards[&b];
+    let a_info = &lockguards[a];
+    let b_info = &lockguards[b];
     let first_lock = (
         format!("{:?}", a_info.lockguard_ty),
         format!("{:?}", a_info.span),
@@ -912,8 +417,13 @@ fn diagnose_one_relation<'tcx>(
     )
 }
 
+/// The NodeIndex in ConflictLockGraph, denoting a unique relation(a, b) in ConflictLockGraph,
+/// where a and b are LockGuardId.
 type RelationId = NodeIndex;
-// record deadlock possibility of b and c between relation(a, b) to relation(c, d)
+
+/// forall relation(a, b), relation(c, d): if b and c are probably/possibly deadlock,
+/// then add edge between relation(a, b) and relation(c, d).
+/// The cycles in the graph may be conflictlock bugs.
 struct ConflictLockGraph {
     graph: Graph<(LockGuardId, LockGuardId), DeadlockPossibility, Directed>,
 }
@@ -936,6 +446,7 @@ impl ConflictLockGraph {
         self.graph.node_weight(a)
     }
 
+    /// Find all the back-edges in the graph.
     fn back_edges(&self) -> Vec<(RelationId, RelationId)> {
         let mut back_edges = Vec::new();
         let nodes = self.graph.node_indices();
@@ -958,6 +469,7 @@ impl ConflictLockGraph {
         back_edges
     }
 
+    /// Find all the cycles in the graph.
     fn cycle_paths(&self) -> Vec<Vec<RelationId>> {
         let mut dedup = Vec::new();
         let mut edge_sets = Vec::new();
@@ -971,14 +483,12 @@ impl ConflictLockGraph {
                 // Thus we use `edge_sets` to deduplicate the cycle paths.
                 let set = path
                     .iter()
-                    .zip(path.iter().skip(1).chain(path.iter().next()))
+                    .zip(path.iter().skip(1).chain(path.get(0)))
                     .map(|(a, b)| (*a, *b))
                     .collect::<FxHashSet<_>>();
                 if !edge_sets.contains(&set) {
                     edge_sets.push(set);
                     dedup.push(path);
-                    // break;
-                    // TODO(boqin): remove break
                 }
             }
         }
@@ -986,7 +496,8 @@ impl ConflictLockGraph {
     }
 
     /// Print the ConflictGraph in dot format.
-    pub fn dot(&self) {
+    #[allow(dead_code)]
+    fn dot(&self) {
         println!(
             "{:?}",
             Dot::with_config(&self.graph, &[Config::GraphContentOnly])

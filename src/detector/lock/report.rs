@@ -25,6 +25,7 @@ impl DeadlockDiagnosis {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ReportContent<D> {
     bug_kind: String,
@@ -33,7 +34,7 @@ pub struct ReportContent<D> {
     explanation: String,
 }
 
-impl<D> ReportContent<D> {
+impl<D: std::fmt::Debug> ReportContent<D> {
     pub fn new(bug_kind: String, possibility: String, diagnosis: D, explanation: String) -> Self {
         Self {
             bug_kind,

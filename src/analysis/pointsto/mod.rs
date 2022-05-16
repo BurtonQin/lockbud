@@ -97,7 +97,7 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
 
     /// pts(target) = pts(target) U pts(source), return true if pts(target) changed
     fn union_pts(&mut self, target: &ConstraintNode<'tcx>, source: &ConstraintNode<'tcx>) -> bool {
-        let old_len = self.pts.get(&target).unwrap().len();
+        let old_len = self.pts.get(target).unwrap().len();
         let source_pts = self.pts.get(source).unwrap().clone();
         let target_pts = self.pts.get_mut(target).unwrap();
         target_pts.extend(source_pts.into_iter());
@@ -425,21 +425,16 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'tcx> {
     /// for callsites like `destination = call fn(move args[0])`,
     /// destination = args[0]
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, _location: Location) {
-        match &terminator.kind {
-            TerminatorKind::Call {
-                func: _,
-                args,
-                destination,
-                ..
-            } => {
-                match (args.as_slice(), destination) {
-                    (&[Operand::Move(arg)], Some((dest, _))) => {
-                        self.process_call_arg_dest(arg.as_ref(), dest.as_ref())
-                    }
-                    _ => {}
-                };
-            }
-            _ => {}
+        if let TerminatorKind::Call {
+            func: _,
+            args,
+            destination,
+            ..
+        } = &terminator.kind
+        {
+            if let (&[Operand::Move(arg)], Some((dest, _))) = (args.as_slice(), destination) {
+                self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
+            };
         }
     }
 }
@@ -544,8 +539,8 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
     ) -> ApproximateAliasKind {
         let body = self.tcx.instance_mir(instance.def);
         let points_to_map = self.get_or_insert_pts(def_id, body);
-        if points_to_map[&node1]
-            .intersection(&points_to_map[&node2])
+        if points_to_map[node1]
+            .intersection(&points_to_map[node2])
             .next()
             .is_some()
         {
@@ -579,8 +574,8 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         let body2 = self.tcx.instance_mir(instance2.def);
         let points_to_map1 = self.get_or_insert_pts(def_id1, body1).clone();
         let points_to_map2 = self.get_or_insert_pts(def_id2, body2);
-        let pts1 = &points_to_map1[&node1];
-        let pts2 = &points_to_map2[&node2];
+        let pts1 = &points_to_map1[node1];
+        let pts2 = &points_to_map2[node2];
         let mut constants1 = pts1
             .iter()
             .filter(|node| matches!(node, &ConstraintNode::ConstantDeref(_)))
@@ -595,18 +590,14 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
             let is_arg = |local: Local, body: &Body<'tcx>| -> bool {
                 body.args_iter().any(|arg| arg == local)
             };
-            let mut arg_places1 = pts1
-                .iter()
-                .filter_map(|node| match node {
-                    ConstraintNode::Place(place) if is_arg(place.local, body1) => Some(place),
-                    _ => None,
-                });
-            let mut arg_places2 = pts2
-                .iter()
-                .filter_map(|node| match node {
-                    ConstraintNode::Place(place) if is_arg(place.local, body2) => Some(place),
-                    _ => None,
-                });
+            let mut arg_places1 = pts1.iter().filter_map(|node| match node {
+                ConstraintNode::Place(place) if is_arg(place.local, body1) => Some(place),
+                _ => None,
+            });
+            let mut arg_places2 = pts2.iter().filter_map(|node| match node {
+                ConstraintNode::Place(place) if is_arg(place.local, body2) => Some(place),
+                _ => None,
+            });
             if arg_places1.any(|place1| {
                 arg_places2.any(|place2| {
                     body1.local_decls[place1.local].ty == body2.local_decls[place2.local].ty

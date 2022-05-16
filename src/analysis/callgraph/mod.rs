@@ -2,7 +2,7 @@
 //! You can roughly think of instances as a monomorphic function.
 //! If an instance calls another instance, then we have an edge
 //! from caller to callee with callsite locations as edge weight.
-//! This is a fundamental analysis for other analysis, 
+//! This is a fundamental analysis for other analysis,
 //! e.g., points-to analysis, lockguard collector, etc.
 use petgraph::algo;
 use petgraph::dot::{Config, Dot};
@@ -103,7 +103,7 @@ impl<'tcx> CallGraph<'tcx> {
         target: InstanceId,
     ) -> Option<Vec<CallSiteLocation>> {
         let edge = self.graph.find_edge(source, target)?;
-        self.graph.edge_weight(edge).map(|cs| cs.clone())
+        self.graph.edge_weight(edge).cloned()
     }
 
     /// Find all simple paths from source to target.
@@ -115,6 +115,7 @@ impl<'tcx> CallGraph<'tcx> {
     }
 
     /// Print the callgraph in dot format.
+    #[allow(dead_code)]
     pub fn dot(&self) {
         println!(
             "{:?}",
@@ -166,18 +167,14 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                 self.param_env,
                 func_ty,
             );
-            match *func_ty.kind() {
-                ty::FnDef(def_id, substs) => {
-                    if let Some(callee) =
-                        Instance::resolve(self.tcx, self.param_env, def_id, substs)
-                            .ok()
-                            .flatten()
-                    {
-                        self.callsites
-                            .push((callee, CallSiteLocation::FnDef(location)));
-                    }
+            if let ty::FnDef(def_id, substs) = *func_ty.kind() {
+                if let Some(callee) = Instance::resolve(self.tcx, self.param_env, def_id, substs)
+                    .ok()
+                    .flatten()
+                {
+                    self.callsites
+                        .push((callee, CallSiteLocation::FnDef(location)));
                 }
-                _ => {}
             }
         }
     }

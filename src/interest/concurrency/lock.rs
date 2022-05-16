@@ -1,44 +1,18 @@
-// LockGuard
-// std::sync::MutexGuard
-// filter types
-// LockGuard: id, type, gen, kill
-// 1. filter locals whose type matches LockGuardTy
-// 2. visit local for gen/kill stmt
-// 3. apply gen/kill analysis on each fn, get relations between lockguards
-// 4. visit callgraph and propogate lockguards inter-procedurally
-// 5. if lockguard A has relation with B (A not released when B acquired)
-// 6. then add edge(A, B) to directed graph with weight as its path
-// 7. find locks that generate A and B
-// 8. if A.lock -> A.lock then doublelock
-// 9. if A.lock -> B.lock and B.lock -> A.lock then conflictlock
-// 10. similarly, if A.lock -> B.lock, B.lock -> C.lock, C.lock -> A.lock then conflictlock
-// 11. in a word, if there is a loop on the directed graph, then there is a possible deadlock
+//! Collect LockGuard info.
 extern crate rustc_hash;
 extern crate rustc_span;
 
 use smallvec::SmallVec;
 
 use rustc_hash::FxHashMap;
-use rustc_middle::mir::visit::{
-    MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor,
-};
+use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::{Body, Local, Location};
 use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
 use rustc_span::Span;
 
 use crate::analysis::callgraph::InstanceId;
 
-// LockGuardId = (InstanceIdx, Local)
-// LockGuardInfo = LockGuardId -> (LockGuardTy, GenLocation, KillLoction)
-// LockGuardGraph = { V: LockGuardId, E: CallChain) }
-// CallChain = [InstanceIdx]
-// DoubleLockCandidate ==
-// \A A, B \in LockGuardId, A \X B \in LockGuardGraph
-// /\ LockGuardInfo(A).LocKGuardTy = LockGuardInfo(B).LockGuardTy
-// ConflictLockCandidate ==
-// \A A, B, C, D \in LockGuardId, A \X B, C \X D \in LockGuardGraph
-// /\ LockGuardInfo(A).LockGuardTy = LockGuardInfo(D).LockGuardTy
-// /\ LockGuardInfo(B).LockGuardTy = LockGuardInfo(C).LockGuardTy
+/// Uniquely identify a LockGuard in a crate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LockGuardId {
     pub instance_id: InstanceId,
@@ -51,6 +25,7 @@ impl LockGuardId {
     }
 }
 
+/// The possibility of deadlock.
 #[derive(Clone, Copy, Debug)]
 pub enum DeadlockPossibility {
     Probably,
@@ -59,7 +34,7 @@ pub enum DeadlockPossibility {
     Unknown,
 }
 
-// LockGuardKind, DataTy
+/// LockGuardKind, DataTy
 #[derive(Clone, Debug)]
 pub enum LockGuardTy<'tcx> {
     StdMutex(ty::Ty<'tcx>),
@@ -80,51 +55,56 @@ impl<'tcx> LockGuardTy<'tcx> {
         // sync: MutexGuard<i32, Poison>
         // spin: MutexGuard<i32>
         // parking_lot: MutexGuard<RawMutex, i32>
-        match local_ty.kind() {
-            ty::TyKind::Adt(adt_def, substs) => {
-                let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
-                if path.starts_with("std::sync::MutexGuard<")
-                    || path.starts_with("sync::mutex::MutexGuard<")
-                {
-                    return Some(LockGuardTy::StdMutex(substs.types().next().unwrap()));
-                } else if path.starts_with("lock_api::mutex::MutexGuard<")
-                    || path.starts_with("parking_lot::lock_api::MutexGuard<")
-                {
-                    return Some(LockGuardTy::ParkingLotMutex(substs.types().nth(1).unwrap()));
-                } else if path.starts_with("spin::mutex::MutexGuard<") {
-                    return Some(LockGuardTy::SpinMutex(substs.types().next().unwrap()));
-                } else if path.starts_with("spin::MutexGuard<") {
-                    return Some(LockGuardTy::SpinMutex(substs.types().next().unwrap()));
-                } else if path.starts_with("std::sync::RwLockReadGuard<") {
-                    return Some(LockGuardTy::StdRwLockRead(substs.types().next().unwrap()));
-                } else if path.starts_with("std::sync::RwLockWriteGuard<") {
-                    return Some(LockGuardTy::StdRwLockWrite(substs.types().next().unwrap()));
-                } else if path.starts_with("lock_api::rwlock::RwLockReadGuard<")
-                    || path.starts_with("parking_lot::lock_api::RwLockReadGuard<")
-                {
-                    return Some(LockGuardTy::ParkingLotRead(substs.types().nth(1).unwrap()));
-                } else if path.starts_with("lock_api::rwlock::RwLockWriteGuard<")
-                    || path.starts_with("parking_lot::lock_api::RwLockWriteGuard<")
-                {
-                    return Some(LockGuardTy::ParkingLotWrite(substs.types().nth(1).unwrap()));
-                } else if path.starts_with("spin::rw_lock::RwLockReadGuard<") {
-                    return Some(LockGuardTy::SpinRead(substs.types().next().unwrap()));
-                } else if path.starts_with("spin::RwLockReadGuard<") {
-                    return Some(LockGuardTy::SpinRead(substs.types().next().unwrap()));
-                } else if path.starts_with("spin::rw_lock::RwLockWriteGuard<") {
-                    return Some(LockGuardTy::SpinWrite(substs.types().next().unwrap()));
-                } else if path.starts_with("spin::RwLockWriteGuard<") {
-                    return Some(LockGuardTy::SpinWrite(substs.types().next().unwrap()));
-                }
+        if let ty::TyKind::Adt(adt_def, substs) = local_ty.kind() {
+            let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
+            if path.starts_with("std::sync::MutexGuard<")
+                || path.starts_with("sync::mutex::MutexGuard<")
+            {
+                return Some(LockGuardTy::StdMutex(substs.types().next().unwrap()));
+            } else if path.starts_with("lock_api::mutex::MutexGuard<")
+                || path.starts_with("parking_lot::lock_api::MutexGuard<")
+            {
+                return Some(LockGuardTy::ParkingLotMutex(substs.types().nth(1).unwrap()));
+            } else if path.starts_with("spin::mutex::MutexGuard<")
+                || path.starts_with("spin::MutexGuard<")
+            {
+                return Some(LockGuardTy::SpinMutex(substs.types().next().unwrap()));
+            } else if path.starts_with("std::sync::RwLockReadGuard<") {
+                return Some(LockGuardTy::StdRwLockRead(substs.types().next().unwrap()));
+            } else if path.starts_with("std::sync::RwLockWriteGuard<") {
+                return Some(LockGuardTy::StdRwLockWrite(substs.types().next().unwrap()));
+            } else if path.starts_with("lock_api::rwlock::RwLockReadGuard<")
+                || path.starts_with("parking_lot::lock_api::RwLockReadGuard<")
+            {
+                return Some(LockGuardTy::ParkingLotRead(substs.types().nth(1).unwrap()));
+            } else if path.starts_with("lock_api::rwlock::RwLockWriteGuard<")
+                || path.starts_with("parking_lot::lock_api::RwLockWriteGuard<")
+            {
+                return Some(LockGuardTy::ParkingLotWrite(substs.types().nth(1).unwrap()));
+            } else if path.starts_with("spin::rw_lock::RwLockReadGuard<")
+                || path.starts_with("spin::RwLockReadGuard<")
+            {
+                return Some(LockGuardTy::SpinRead(substs.types().next().unwrap()));
+            } else if path.starts_with("spin::rw_lock::RwLockWriteGuard<")
+                || path.starts_with("spin::RwLockWriteGuard<")
+            {
+                return Some(LockGuardTy::SpinWrite(substs.types().next().unwrap()));
             }
-            _ => {}
-        };
+        }
         None
     }
 
+    /// In parking_lot, the read lock is by default non-recursive if not specified.
+    /// if two recursively acquired read locks in one thread are interleaved
+    /// by a write lock from another thread, a deadlock may happen.
+    /// The reason is write lock has higher priority than read lock in parking_lot.
+    /// In std::sync, the implementation of read lock depends on the underlying OS.
+    /// AFAIK, the implementation on Windows and Mac have write priority.
+    /// So read lock in std::sync cannot be acquired recursively on the two systems.
+    /// spin explicitly documents no write priority. So the read lock in spin can
+    /// be acquired recursively.
     pub fn deadlock_with(&self, other: &Self) -> DeadlockPossibility {
         use LockGuardTy::*;
-        // println!("deadlock_with: {:?}, {:?}", self, other);
         match (self, other) {
             (StdMutex(a), StdMutex(b))
             | (ParkingLotMutex(a), ParkingLotMutex(b))
@@ -152,6 +132,7 @@ impl<'tcx> LockGuardTy<'tcx> {
     }
 }
 
+/// The lockguard info. `span` is for report.
 #[derive(Clone, Debug)]
 pub struct LockGuardInfo<'tcx> {
     pub lockguard_ty: LockGuardTy<'tcx>,
@@ -171,22 +152,9 @@ impl<'tcx> LockGuardInfo<'tcx> {
     }
 }
 
-// filter CallGraph has_lockguard
-// for all instances
-// 	if instance contains lockguard
-//    mark the instance on callgraph
-//    wcc
-//    dfs(visit)
-// for each wcc of Callgraph
-//   dfs_visit(wcc.root)
-//   if inst not contains lockguard, then push it to edge
-//   if contains, then make it a node
-// fn filter_callgraph(callgraph: CallGraph) {
-
-// }
-
 pub type LockGuardMap<'tcx> = FxHashMap<LockGuardId, LockGuardInfo<'tcx>>;
 
+//// Collect lockguard info.
 pub struct LockGuardCollector<'a, 'b, 'tcx> {
     instance_id: InstanceId,
     instance: &'a Instance<'tcx>,
@@ -237,15 +205,8 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
         // local is lockguard
         if let Some(info) = self.lockguards.get_mut(&lockguard_id) {
             match context {
-                // PlaceContext::NonUse(context) => match context {
-                //     NonUseContext::StorageLive => info.gen_locs.push(location),
-                //     NonUseContext::StorageDead => info.kill_locs.push(location),
-                //     _ => {}
-                // },
-                PlaceContext::NonMutatingUse(context) => {
-                    if let NonMutatingUseContext::Move = context {
-                        info.kill_locs.push(location);
-                    }
+                PlaceContext::NonMutatingUse(NonMutatingUseContext::Move) => {
+                    info.kill_locs.push(location);
                 }
                 PlaceContext::MutatingUse(context) => match context {
                     MutatingUseContext::Drop => info.kill_locs.push(location),
@@ -258,18 +219,3 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
         }
     }
 }
-
-// lockguard instances = filter instances if instance contains lockguard
-// traverse callgraph to find caller-callee relations between lockguard instances, record the reachable callchain
-// Graph = (V: lockguard_instance, E: callchain)
-// dfs_visit wcc of Graph starting from root instance
-// dfs_visit BBs of instance
-// fixedpoint:
-// 	before[BB] = after[preds(BB)]
-// 	after[BB] = before[BB] \ kill[BB] U gen[BB]
-// output: relations = LockGuardId X LockGuardId, info = LockGuardId X LockGuardInfo
-// get candidate deadlock pairs purely based on data type of Lock
-// deadlocks = lockguards pair that (may) deadlock
-// if (A, B) in both relations and deadlocks then report
-// if (A, B), (C, D) in relations and (A, D), (B, C) in deadlocks then report
-// if (A, B), (C, D), (E, F) in relations and (A, ), (B, C),

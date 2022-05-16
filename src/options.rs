@@ -1,5 +1,4 @@
 use clap::{Arg, Command};
-use shellwords;
 use std::error::Error;
 
 #[derive(Debug)]
@@ -98,7 +97,7 @@ impl Options {
         let crate_name_list = matches
             .value_of("crates")
             .map(|crates| {
-                let crates: Vec<String> = crates.split(",").map(|s| s.into()).collect();
+                let crates: Vec<String> = crates.split(',').map(|s| s.into()).collect();
                 if black {
                     CrateNameList::Black(crates)
                 } else {

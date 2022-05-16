@@ -3,18 +3,17 @@ extern crate rustc_hir;
 
 use std::path::PathBuf;
 
-use crate::detector::lock::LockGuardInstanceGraph;
 use crate::options::{CrateNameList, Options};
-use log::info;
+use log::{debug, info};
 use rustc_driver::Compilation;
 use rustc_hir::def_id::LOCAL_CRATE;
-use rustc_interface::{interface};
+use rustc_interface::interface;
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
 
 use crate::analysis::callgraph::CallGraph;
 
-use crate::detector::lock::DeadLockDetector;
+use crate::detector::lock::DeadlockDetector;
 
 pub struct LockBudCallbacks {
     options: Options,
@@ -37,9 +36,9 @@ impl LockBudCallbacks {
 impl rustc_driver::Callbacks for LockBudCallbacks {
     fn config(&mut self, config: &mut rustc_interface::interface::Config) {
         self.file_name = config.input.source_name().prefer_remapped().to_string();
-        info!("Processing input file: {}", self.file_name);
+        debug!("Processing input file: {}", self.file_name);
         if config.opts.test {
-            info!("in test only mode");
+            debug!("in test only mode");
             // self.options.test_only = true;
         }
         match &config.output_dir {
@@ -94,9 +93,9 @@ impl LockBudCallbacks {
         }
         let cgus = tcx.collect_and_partition_mono_items(()).1;
         let instances: Vec<Instance<'tcx>> = cgus
-            .into_iter()
+            .iter()
             .flat_map(|cgu| {
-                cgu.items().into_iter().filter_map(|(mono_item, _)| {
+                cgu.items().iter().filter_map(|(mono_item, _)| {
                     if let MonoItem::Fn(instance) = mono_item {
                         Some(*instance)
                     } else {
@@ -108,23 +107,10 @@ impl LockBudCallbacks {
         let mut callgraph = CallGraph::new();
         let param_env = ParamEnv::reveal_all();
         callgraph.analyze(instances.clone(), tcx, param_env);
-        callgraph.dot();
-        let mut lockguard_instance_graph = LockGuardInstanceGraph::new();
-        lockguard_instance_graph.analyze(&callgraph, tcx, param_env);
-        lockguard_instance_graph.dot();
-        let mut deadlock_detector = DeadLockDetector::new(tcx, param_env);
-        deadlock_detector.detect(&callgraph);
-        // println!("relations: {:?}", deadlock_detector.lockguard_relations);
-        // for instance in instances {
-        //     let body = tcx.instance_mir(instance.def);
-        //     if body.source.promoted.is_some() {
-        //         continue;
-        //     }
-        //     println!("{:?}", instance.def_id());
-        //     let mut pointer_analysis = Andersen::new(body);
-        //     pointer_analysis.analyze();
-        //     let pts = pointer_analysis.finish();
-        //     println!("{:#?}", pts);
-        // }
+        let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
+        let reports = deadlock_detector.detect(&callgraph);
+        for report in reports {
+            info!("{:?}", report);
+        }
     }
 }
