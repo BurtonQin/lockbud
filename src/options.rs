@@ -1,8 +1,8 @@
 //! Parsing Options.
-//! --detector_kind [kind] or -k, currently support only deadlock
-//! --blacklist_mode or -b, sets backlist than the default whitelist.
-//! --crate_name_list [crate1, crate2] or -l, white or black lists of crates decided by -b.
-//! if -l not specified, then do not white-or-black list the crates.
+//! `--detector-kind {kind}` or `-k`, currently support only deadlock
+//! `--blacklist-mode` or `-b`, sets backlist than the default whitelist.
+//! `--crate-name-list [crate1,crate2]` or `-l`, white or black lists of crates decided by `-b`.
+//! if `-l` not specified, then do not white-or-black list the crates.
 use clap::{Arg, Command};
 use std::error::Error;
 

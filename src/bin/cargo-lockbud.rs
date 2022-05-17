@@ -1,4 +1,4 @@
-//! `cargo lockbud $FLAGS $ARGS` calls `cargo build` with RUSC_WRAPPER set to `lockbud`.
+//! `cargo lockbud $FLAGS $ARGS` calls `cargo build` with RUSTC_WRAPPER set to `lockbud`.
 //! The flags are passed to `lockbud` through env var `LOCKBUD_FLAGS`.
 //! The remainining args are unchanged.
 //! To re-run `cargo lockbud` with different flags on the same crate, please `cargo clean` first.

@@ -1,5 +1,5 @@
 //! The main functionality: callbacks for rustc plugin systems.
-//! Inspired by https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/callbacks.rs
+//! Inspired by <https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/callbacks.rs>
 extern crate rustc_driver;
 extern crate rustc_hir;
 

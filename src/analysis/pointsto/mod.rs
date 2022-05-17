@@ -23,7 +23,7 @@ use crate::analysis::callgraph::{CallGraph, InstanceId};
 use crate::interest::concurrency::lock::LockGuardId;
 
 /// Field-sensitive intra-procedural Andersen pointer analysis.
-/// https://helloworld.pub/program-analysis-andersen-pointer-analysis-algorithm-based-on-svf.html
+/// <https://helloworld.pub/program-analysis-andersen-pointer-analysis-algorithm-based-on-svf.html>
 /// 1. collect constraints from MIR to build a `ConstraintGraph`
 /// 2. adopt a fixed-point algorithm to update `ConstraintGraph` and points-to info
 pub struct Andersen<'a, 'tcx> {
@@ -426,8 +426,8 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'tcx> {
     }
 
     /// Heuristically assumes that
-    /// for callsites like `destination = call fn(move args[0])`,
-    /// destination = args[0]
+    /// for callsites like `destination = call fn(move args0)`,
+    /// destination = args0
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, _location: Location) {
         if let TerminatorKind::Call {
             func: _,
