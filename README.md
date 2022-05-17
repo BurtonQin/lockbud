@@ -14,13 +14,16 @@ Ongoing work includes other concurrency bugs like atomicity violation and some m
 ## Install
 Currently supports rustc 1.62.0-nightly (082e4ca49 2022-04-26)
 ```
-$ git clone https://github.com/BurtonQin/rust-lock-bug-detector.git
-$ cd rust-lock-bug-detector
+$ git clone https://github.com/BurtonQin/lockbud.git
+$ cd lockbud
 $ rustup component add rust-src
 $ rustup component add rustc-dev
 $ rustup component add llvm-tools-preview
 $ cargo install --path .
 ```
+
+Note that you must use the same rustc nightly version as lockbud to detect your project!
+You can either override your rustc version or specify rust-toolchains in your project.
 
 ## Example
 Test toys
