@@ -1,10 +1,12 @@
+//! The main functionality: callbacks for rustc plugin systems.
+//! Inspired by https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/callbacks.rs
 extern crate rustc_driver;
 extern crate rustc_hir;
 
 use std::path::PathBuf;
 
-use crate::options::{CrateNameList, Options};
-use log::{debug, info};
+use crate::options::{CrateNameList, DetectorKind, Options};
+use log::{debug, warn};
 use rustc_driver::Compilation;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::interface;
@@ -73,7 +75,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
         } else {
-            // Although MIRAI is only a checker, cargo still needs code generation to work.
+            // Although LockBud is only a checker, cargo still needs code generation to work.
             Compilation::Continue
         }
     }
@@ -84,7 +86,9 @@ impl LockBudCallbacks {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
         match &self.options.crate_name_list {
-            CrateNameList::White(crates) if !crates.contains(&crate_name) => return,
+            CrateNameList::White(crates) if !crates.is_empty() && !crates.contains(&crate_name) => {
+                return
+            }
             CrateNameList::Black(crates) if crates.contains(&crate_name) => return,
             _ => {}
         };
@@ -107,10 +111,14 @@ impl LockBudCallbacks {
         let mut callgraph = CallGraph::new();
         let param_env = ParamEnv::reveal_all();
         callgraph.analyze(instances.clone(), tcx, param_env);
-        let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
-        let reports = deadlock_detector.detect(&callgraph);
-        for report in reports {
-            info!("{:?}", report);
+        match self.options.detector_kind {
+            DetectorKind::Deadlock => {
+                let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
+                let reports = deadlock_detector.detect(&callgraph);
+                for report in reports {
+                    warn!("{:?}", report);
+                }
+            }
         }
     }
 }

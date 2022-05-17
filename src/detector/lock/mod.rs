@@ -52,6 +52,7 @@ impl LiveLockGuards {
     }
 }
 
+/// Detect doublelock and conflictlock.
 pub struct DeadlockDetector<'tcx> {
     tcx: TyCtxt<'tcx>,
     param_env: ParamEnv<'tcx>,

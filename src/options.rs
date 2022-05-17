@@ -1,3 +1,8 @@
+//! Parsing Options.
+//! --detector_kind [kind] or -k, currently support only deadlock
+//! --blacklist_mode or -b, sets backlist than the default whitelist.
+//! --crate_name_list [crate1, crate2] or -l, white or black lists of crates decided by -b.
+//! if -l not specified, then do not white-or-black list the crates.
 use clap::{Arg, Command};
 use std::error::Error;
 
@@ -9,14 +14,15 @@ pub enum CrateNameList {
 
 impl Default for CrateNameList {
     fn default() -> Self {
-        CrateNameList::Black(Vec::new())
+        CrateNameList::White(Vec::new())
     }
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum DetectorKind {
-    DoubleLock,
-    ConflictLock,
+    Deadlock,
+    // More to be supported.
 }
 
 fn make_options_parser<'help>() -> Command<'help> {
@@ -26,40 +32,24 @@ fn make_options_parser<'help>() -> Command<'help> {
         .arg(
             Arg::new("kind")
                 .short('k')
-                .long("detector_kind")
-                .possible_values(&["doublelock", "conflictlock"])
-                .default_values(&["doublelock"])
+                .long("detector-kind")
+                .possible_values(&["deadlock"])
+                .default_values(&["deadlock"])
                 .help("The detector kind"),
         )
         .arg(
             Arg::new("black")
                 .short('b')
-                .long("blacklist_mode")
+                .long("blacklist-mode")
                 .takes_value(false)
                 .help("set `crates` as blacklist than whitelist"),
         )
         .arg(
             Arg::new("crates")
                 .short('l')
-                .long("crate_name_list")
+                .long("crate-name-list")
                 .takes_value(true)
-                .help("The crate names eperated by ,"),
-        )
-        .arg(
-            Arg::new("depth")
-                .short('d')
-                .long("callchain_depth")
-                .takes_value(true)
-                .default_value("4")
-                .help("The callchain depth for inter-procedural analysis"),
-        )
-        .arg(
-            Arg::new("iternum")
-                .short('n')
-                .long("max_iter_num")
-                .takes_value(true)
-                .default_value("10000")
-                .help("Then GenKill iteration inside one function"),
+                .help("The crate names seperated by ,"),
         );
     parser
 }
@@ -68,17 +58,13 @@ fn make_options_parser<'help>() -> Command<'help> {
 pub struct Options {
     pub detector_kind: DetectorKind,
     pub crate_name_list: CrateNameList,
-    pub callchain_depth: u32,
-    pub max_iter_num: u32,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Options {
-            detector_kind: DetectorKind::DoubleLock,
+            detector_kind: DetectorKind::Deadlock,
             crate_name_list: CrateNameList::Black(Vec::new()),
-            callchain_depth: 4,
-            max_iter_num: 10000,
         }
     }
 }
@@ -86,11 +72,14 @@ impl Default for Options {
 impl Options {
     pub fn parse_from_str(s: &str) -> Result<Self, Box<dyn Error>> {
         let flags = shellwords::split(s)?;
+        Self::parse_from_args(&flags)
+    }
+
+    pub fn parse_from_args(flags: &[String]) -> Result<Self, Box<dyn Error>> {
         let app = make_options_parser();
         let matches = app.try_get_matches_from(flags.iter())?;
         let detector_kind = match matches.value_of("kind") {
-            Some("doublelock") => DetectorKind::DoubleLock,
-            Some("conflictlock") => DetectorKind::ConflictLock,
+            Some("deadlock") => DetectorKind::Deadlock,
             _ => return Err("UnsupportedDetectorKind")?,
         };
         let black = matches.is_present("black");
@@ -105,19 +94,9 @@ impl Options {
                 }
             })
             .unwrap_or_default();
-        let callchain_depth: u32 = matches
-            .value_of("depth")
-            .map(|s| s.parse::<u32>())
-            .unwrap_or(Ok(4))?;
-        let max_iter_num: u32 = matches
-            .value_of("iternum")
-            .map(|s| s.parse::<u32>())
-            .unwrap_or(Ok(10000))?;
         Ok(Options {
             detector_kind,
             crate_name_list,
-            callchain_depth,
-            max_iter_num,
         })
     }
 }

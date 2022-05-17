@@ -198,6 +198,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5916d2ae698f6de9bfb891ad7a8d65c09d232dc58cc4ac433c7da3b2fd84bc2b"
 
 [[package]]
+name = "lockbud"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "cargo_metadata",
+ "clap",
+ "directories",
+ "env_logger",
+ "getrandom",
+ "hex",
+ "log",
+ "petgraph",
+ "rand",
+ "rustc_version",
+ "shell-escape",
+ "shellwords",
+ "smallvec",
+]
+
+[[package]]
 name = "log"
 version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,27 +348,6 @@ name = "regex-syntax"
 version = "0.6.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
-
-[[package]]
-name = "rust-lock-bug-detector"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "byteorder",
- "cargo_metadata",
- "clap",
- "directories",
- "env_logger",
- "getrandom",
- "hex",
- "log",
- "petgraph",
- "rand",
- "rustc_version",
- "shell-escape",
- "shellwords",
- "smallvec",
-]
 
 [[package]]
 name = "rustc_version"

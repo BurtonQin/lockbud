@@ -154,7 +154,7 @@ impl<'tcx> LockGuardInfo<'tcx> {
 
 pub type LockGuardMap<'tcx> = FxHashMap<LockGuardId, LockGuardInfo<'tcx>>;
 
-//// Collect lockguard info.
+/// Collect lockguard info.
 pub struct LockGuardCollector<'a, 'b, 'tcx> {
     instance_id: InstanceId,
     instance: &'a Instance<'tcx>,

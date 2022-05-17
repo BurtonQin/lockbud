@@ -1,3 +1,10 @@
+//! Reports for different kinds of bugs.
+//! ReportContent includes bug kind, possibility, diagnosis, and explanation.
+//! The diagnosis for different kinds of bugs may be different.
+//! e.g., doublelock diagnosis contains one deadlock diagnosis,
+//！while conflictlock diagnosis contanis a vector of deadlock diagnosis.
+//! Deadlock diagnosis consists of the first & second locks' type and span (a.k.a. src code location),
+//! and **all** possible callchains from first to second lock.
 #[derive(Debug)]
 pub struct DeadlockDiagnosis {
     pub first_lock_type: String,

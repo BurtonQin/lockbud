@@ -1,3 +1,5 @@
+//! The general rustc plugin framework.
+//! Inspired by https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/main.rs
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 
@@ -12,9 +14,8 @@ mod detector;
 mod interest;
 mod options;
 
+use log::debug;
 use options::Options;
-
-use log::{debug, info};
 use rustc_session::config::ErrorOutputType;
 use rustc_session::early_error;
 
@@ -32,7 +33,7 @@ fn main() {
     // Get any options specified via the LOCKBUD_FLAGS environment variable
     let options = Options::parse_from_str(&std::env::var("LOCKBUD_FLAGS").unwrap_or_default())
         .unwrap_or_default();
-    info!("LOCKBUD options from environment: {:?}", options);
+    debug!("LOCKBUD options from environment: {:?}", options);
     let mut args = std::env::args_os()
         .enumerate()
         .map(|(i, arg)| {
@@ -88,12 +89,6 @@ fn main() {
                 rustc_command_line_arguments.push("-Z".into());
                 rustc_command_line_arguments.push(always_encode_mir);
             }
-
-            // Disable this pass so as to preserve StorageLive and StorageDead in MIR.
-            let not_remove_storage_markers: String =
-                "mir-enable-passes=-RemoveStorageMarkers".into();
-            rustc_command_line_arguments.push("-Z".into());
-            rustc_command_line_arguments.push(not_remove_storage_markers);
         }
 
         let mut callbacks = callbacks::LockBudCallbacks::new(options);

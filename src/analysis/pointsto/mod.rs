@@ -137,6 +137,10 @@ pub enum ConstraintNode<'tcx> {
 /// | Copy   | a = b      | pts(a)⊇pts(b)
 /// | Load   | a = *b     | ∀o∈pts(b), pts(a)⊇pts(o)
 /// | Store  | *a = b     | ∀o∈pts(a), pts(o)⊇pts(b)
+///
+/// Note that other forms like a = &((*b).0) exists but is uncommon.
+/// This is the case when b is an arg. We just treat (*b).0
+/// as the mem cell and do not further dereference it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConstraintEdge {
     Address,
