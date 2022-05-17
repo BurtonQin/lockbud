@@ -1,14 +1,18 @@
-# rust-lock-bug-detector
-Statically detect double-lock &amp; conflicting-lock bugs on MIR.
+# lockbud
+Statically detect deadlocks bugs for Rust.
 
 This work follows up the our elaborated Rust study in [Understanding Memory and Thread Safety Practices and Issues in Real-World Rust Programs](https://songlh.github.io/paper/rust-study.pdf) in PLDI'20.
 I am honored to share the co-first author with Yilun Chen and be able to collaborate with far-sighted, knowledgeable and hardworking Prof Linhai Song and Yiying Zhang.
 I focus on Rust unsafe code and concurrency bugs in this paper.
-This project is my initial efforts to improve the concurrency safety in Rust ecosystem by statically detecting two common kinds of concurrency bugs:
-double lock and locks in conflicting order.
+
+Please refer to our paper for more interesting concurrency and memory bug categories in Rust.
+
+This project is my initial efforts to improve the concurrency safety in Rust ecosystem by statically detecting two common kinds of deadlock bugs:
+doublelock and locks in conflicting order (conflictlock for brevity).
+Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free.
 
 ## Install
-Currently supports rustc version: 1.51.0-nightly (7a9b552cb 2021-01-12)
+Currently supports rustc 1.62.0-nightly (082e4ca49 2022-04-26)
 ```
 $ git clone https://github.com/BurtonQin/rust-lock-bug-detector.git
 $ cd rust-lock-bug-detector
@@ -19,39 +23,68 @@ $ cargo install --path .
 ```
 
 ## Example
-Test examples
+Test toys
 ```
-$ ./run.sh examples/inter
+$ ./detect.sh toys/inter
+```
+It will print 15 doublelock bugs like the following one:
+
+```
+DoubleLock(ReportContent { bug_kind: "DoubleLock", possibility: "Possibly", diagnosis: DeadlockDiagnosis { first_lock_type: "ParkingLotWrite(i32)", first_lock_span: "src/main.rs:77:16: 77:32 (#0)", second_lock_type: "ParkingLotRead(i32)", second_lock_span: "src/main.rs:84:18: 84:33 (#0)", callchains: [[["src/main.rs:79:20: 79:52 (#0)"]]] }, explanation: "The first lock is not released when acquiring the second lock" })
 ```
 
-Run with cargo subcommands
+The output shows that there is possibly a doublelock bug. The DeadlockDiagnosis reads that the first lock is a parking_lot WriteLock acquired on src/main.rs:77 and the second lock is a parking_lot ReadLock aquired on src/main.rs:84. The first lock reaches the second lock through callsites src/main.rs:79. The explanation demonstrates the reason for doubelock.
+
 ```
-$ cd examples/inter; cargo clean; cargo lock-bug-detect double-lock
-$ cd examples/conflict-inter; cargo clean; cargo lock-bug-detect conflict-lock
+$ ./detect.sh toys/conflict-inter
 ```
-You need to run
+It will print one conflictlock bug
+
+```
+ConflictLock(ReportContent { bug_kind: "ConflictLock", possibility: "Possibly", diagnosis: [DeadlockDiagnosis { first_lock_type: "StdRwLockRead(i32)", first_lock_span: "src/main.rs:29:16: 29:40 (#0)", second_lock_type: "StdMutex(i32)", second_lock_span: "src/main.rs:36:10: 36:34 (#0)", callchains: [[["src/main.rs:31:20: 31:38 (#0)"]]] }, DeadlockDiagnosis { first_lock_type: "StdMutex(i32)", first_lock_span: "src/main.rs:18:16: 18:40 (#0)", second_lock_type: "StdRwLockWrite(i32)", second_lock_span: "src/main.rs:25:10: 25:35 (#0)", callchains: [[["src/main.rs:20:20: 20:35 (#0)"]]] }], explanation: "Locks mutually wait for each other to form a cycle" })
+```
+
+The output shows that there is possibly a conflictlock bug. The DeadlockDiagnosis is similar to doublelock bugs except that there are at least two diagnosis records. All the diagnosis records form a cycle, e.g. A list of records [(first_lock, second_lock), (second_lock', first_lock')] means that it is possible that first_lock is aquired and waits for second_lock in one thread, while second_lock' is aquired and waits for first_lock' in another thread, which incurs a conflictlock bug.
+
+`detect.sh` is mainly for development of the detector and brings more flexibility.
+You can modify `detect.sh` to use release vesion of lockbud to detect large and complex projects.
+
+For ease of use, you can also run cargo lockbud
+```
+$ cd toys/inter; cargo clean; cargo lockbud -k deadlock
+```
+Note that you need to run
 ```
 cargo clean
 ```
-before re-detecting.
+before re-running lockbud.
 
 ## How it works
 In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
 So we can track the lifetime of lockguards to detect lock-related bugs.
-For each crate (the crate to be checked and its dependencies)
-1. Collect LockGuard info, including
-   - Where its lifetime begins and where it is dropped.
-   - Use an (immature) automata to track its src (where the lockguard is created) to check if two lockguards come from the same lock heuristically.
-2. Collect the caller-callee relationship to generate the callgraph.
-3. Apply a GenKill algorithm to detect the lock-related bugs.
+For each crate (the crate to be detected and its dependencies)
+1. Collect the caller-callee info to generate a callgraph.
+2. Collect LockGuard info, including
+   - The lockguard type and span;
+   - Where it is created and where it is dropped.
+3. Apply a GenKill algorithm on the callgraph to find pairs of lockguards (a, b) s.t.
+   - a not dropped when b is created.
+4. A pair (a, b) can doublelock if
+   - the lockguard types of a & b can deadlock;
+   - and a & b may point to the same lock (obtained from points-to analysis).
+5. For (a, b), (c, d) in the remaining pairs
+   - if b and c can deadlock then add an edge from (a, b) to (c, d) into a graph.
+6. The cycle in the graph implies a conflictlock.
 
 ## Caveats
 1. Currently only supports `std::sync::{Mutex, RwLock}`, `parking_lot::{Mutex, RwLock}`, `spin::{Mutex, RwLock}`
-2. The automata to track lockguard src location is still immature and uses many heuristic assumptions.
-3. The callgraph is crate-specific (the callers and callees are in the same crate) and cannot track indirect call.
-4. In the GenKill algorithm, the current iteration times for one function is limited to 10000 and the call-chain depth is 4 for speed.
+2. The callgraph is crate-specific (the callers and callees are in the same crate) and cannot track indirect call.
+3. The points-to analysis is imprecise and makes heuristic assumptions for function calls and assignments.
 
 ## Results
 Found dozens of bugs in many repositories: openethereum, grin, winit, sonic, lighthouse, etc.
 Some of the repositories are dependencies of other large projects.
-I only find one FP is in crate `cc` because the automata mistakenly assumes two unrelated lockguards are from the same src.
+We try to strike a balance between FP and FN to make the detector usable.
+
+## License
+The lockbud Project is dual-licensed under Apache 2.0 and MIT terms.

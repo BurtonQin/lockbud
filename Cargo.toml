@@ -1,17 +1,17 @@
 [package]
-name = "rust-lock-bug-detector"
+name = "lockbud"
 version = "0.1.0"
 authors = ["BurtonQin <bobbqqin@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
-name = "rust-lock-bug-detector"
+name = "lockbud"
 path = "src/main.rs"
 
 [[bin]]
-name = "cargo-lock-bug-detect"
-path = "src/bin/cargo-lock-bug-detect.rs"
+name = "cargo-lockbud"
+path = "src/bin/cargo-lockbud.rs"
 
 [dependencies]
 cargo_metadata = { version = "0.12.1", optional = true }
@@ -24,6 +24,14 @@ log = "0.4.11"
 shell-escape = "0.1.5"
 hex = "0.4.0"
 rand = "0.8.0"
+clap = "3.1.12"
+shellwords = "1.1.0"
+petgraph = "0.6.0"
+bitflags = "1.3.2"
+smallvec = "1.8.0"
 
 [profile.dev]
 incremental = false
+
+[package.metadata.rust-analyzer]
+rustc_private=true
