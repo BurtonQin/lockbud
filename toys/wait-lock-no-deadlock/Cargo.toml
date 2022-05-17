@@ -1,5 +1,5 @@
 [package]
-name = "callgraph"
+name = "wait-lock-no-deadlock"
 version = "0.1.0"
 edition = "2021"
 

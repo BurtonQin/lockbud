@@ -20,10 +20,13 @@ impl Foo {
             _ => {}
         };
     }
+    fn bar(&self) -> i32 {
+        self.data
+    }
 }
 
 fn main() {
     let f = Foo::new();
     f.foo();
-    println!("Hello, world!");
+    f.bar();
 }

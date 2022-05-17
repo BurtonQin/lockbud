@@ -23,9 +23,9 @@ $ cargo install --path .
 ```
 
 ## Example
-Test examples
+Test toys
 ```
-$ ./detect.sh examples/inter
+$ ./detect.sh toys/inter
 ```
 It will print 15 doublelock bugs like the following one:
 
@@ -36,7 +36,7 @@ DoubleLock(ReportContent { bug_kind: "DoubleLock", possibility: "Possibly", diag
 The output shows that there is possibly a doublelock bug. The DeadlockDiagnosis reads that the first lock is a parking_lot WriteLock acquired on src/main.rs:77 and the second lock is a parking_lot ReadLock aquired on src/main.rs:84. The first lock reaches the second lock through callsites src/main.rs:79. The explanation demonstrates the reason for doubelock.
 
 ```
-$ ./detect.sh examples/conflict-inter
+$ ./detect.sh toys/conflict-inter
 ```
 It will print one conflictlock bug
 
@@ -47,9 +47,11 @@ ConflictLock(ReportContent { bug_kind: "ConflictLock", possibility: "Possibly", 
 The output shows that there is possibly a conflictlock bug. The DeadlockDiagnosis is similar to doublelock bugs except that there are at least two diagnosis records. All the diagnosis records form a cycle, e.g. A list of records [(first_lock, second_lock), (second_lock', first_lock')] means that it is possible that first_lock is aquired and waits for second_lock in one thread, while second_lock' is aquired and waits for first_lock' in another thread, which incurs a conflictlock bug.
 
 `detect.sh` is mainly for development of the detector and brings more flexibility.
+You can modify `detect.sh` to use release vesion of lockbud to detect large and complex projects.
+
 For ease of use, you can also run cargo lockbud
 ```
-$ cd examples/inter; cargo clean; cargo lockbud -k deadlock
+$ cd toys/inter; cargo clean; cargo lockbud -k deadlock
 ```
 Note that you need to run
 ```

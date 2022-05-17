@@ -61,9 +61,7 @@ fn in_cargo_lockbud() {
         flags.push(arg);
     }
     let flags = flags.join(" ");
-    println!("flags: {:?}", flags);
     cmd.env("LOCKBUD_FLAGS", flags);
-    println!("cmd: {:?}", cmd);
     let exit_status = cmd
         .spawn()
         .expect("could not run cargo")

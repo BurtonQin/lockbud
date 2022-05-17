@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "wait-lock"
+name = "wait-lock-no-deadlock"
 version = "0.1.0"
