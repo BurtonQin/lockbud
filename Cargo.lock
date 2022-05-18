@@ -213,6 +213,8 @@ dependencies = [
  "petgraph",
  "rand",
  "rustc_version",
+ "serde",
+ "serde_json",
  "shell-escape",
  "shellwords",
  "smallvec",

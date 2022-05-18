@@ -16,6 +16,7 @@ use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
 use crate::analysis::callgraph::CallGraph;
 
 use crate::detector::lock::DeadlockDetector;
+use crate::detector::lock::Report;
 
 pub struct LockBudCallbacks {
     options: Options,
@@ -115,10 +116,36 @@ impl LockBudCallbacks {
             DetectorKind::Deadlock => {
                 let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
                 let reports = deadlock_detector.detect(&callgraph);
-                for report in reports {
-                    warn!("{:?}", report);
+                if !reports.is_empty() {
+                    let j = serde_json::to_string_pretty(&reports).unwrap();
+                    warn!("{}", j);
+                    report_stats(&crate_name, &reports);
                 }
             }
         }
     }
+}
+
+fn report_stats(crate_name: &str, reports: &[Report]) {
+    let (
+        mut doublelock_probably,
+        mut doublelock_possibly,
+        mut conflictlock_probably,
+        mut conflictlock_possibly,
+    ) = (0, 0, 0, 0);
+    for report in reports {
+        match report {
+            Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
+                "Probably" => doublelock_probably += 1,
+                "Possibly" => doublelock_possibly += 1,
+                _ => {}
+            },
+            Report::ConflictLock(conflictlock) => match conflictlock.possibility.as_str() {
+                "Probably" => conflictlock_probably += 1,
+                "Possibly" => conflictlock_possibly += 1,
+                _ => {}
+            },
+        }
+    }
+    warn!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly);
 }
