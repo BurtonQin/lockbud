@@ -89,5 +89,19 @@ Found dozens of bugs in many repositories: openethereum, grin, winit, sonic, lig
 Some of the repositories are dependencies of other large projects.
 We try to strike a balance between FP and FN to make the detector usable.
 
+Bugs detected and fixed (one PR may fix multiple bugs):
+
+1. https://github.com/openethereum/openethereum/pull/289
+2. https://github.com/openethereum/parity-ethereum/pull/11764
+3. https://github.com/sigp/lighthouse/pull/1241
+4. https://github.com/solana-labs/solana/pull/10466
+5. https://github.com/solana-labs/solana/pull/10469
+6. https://github.com/wasmerio/wasmer/pull/1466
+7. https://github.com/paritytech/substrate/pull/6277
+8. https://github.com/mimblewimble/grin/pull/3337
+9. https://github.com/mimblewimble/grin/pull/3340
+10. https://github.com/sigp/lighthouse/pull/1241
+11. https://github.com/rust-windowing/winit/pull/1579
+
 ## License
 The lockbud Project is dual-licensed under Apache 2.0 and MIT terms.
