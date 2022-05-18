@@ -136,6 +136,7 @@ For each crate (the crate to be detected and its dependencies)
 1. Currently only supports `std::sync::{Mutex, RwLock}`, `parking_lot::{Mutex, RwLock}`, `spin::{Mutex, RwLock}`
 2. The callgraph is crate-specific (the callers and callees are in the same crate) and cannot track indirect call.
 3. The points-to analysis is imprecise and makes heuristic assumptions for function calls and assignments.
+   - A common FP comes from `cc`, where points-to analysis incorrectly assumes that two unrelated lockguards are from the same lock. Thus blacklist `cc` in `detector.sh`.
 
 ## Results
 Found dozens of bugs in many repositories: openethereum, grin, winit, sonic, lighthouse, etc.
