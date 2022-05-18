@@ -363,31 +363,27 @@ fn track_callchains<'tcx>(
     callgraph: &CallGraph<'tcx>,
     tcx: TyCtxt<'tcx>,
 ) -> Vec<Vec<Vec<String>>> {
-    if source == target {
-        vec![]
-    } else {
-        let paths = callgraph.all_simple_paths(source, target);
-        paths
-            .into_iter()
-            .map(|vec| {
-                vec.iter()
-                    .zip(vec.iter().skip(1))
-                    .map(|(caller, callee)| {
-                        let caller_instance = callgraph.index_to_instance(*caller).unwrap();
-                        let caller_body = tcx.instance_mir(caller_instance.def);
-                        let callsites = callgraph.callsites(*caller, *callee).unwrap();
-                        callsites
-                            .into_iter()
-                            .map(|location| {
-                                let CallSiteLocation::FnDef(location) = location;
-                                format!("{:?}", caller_body.source_info(location).span)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>()
-    }
+    let paths = callgraph.all_simple_paths(source, target);
+    paths
+        .into_iter()
+        .map(|vec| {
+            vec.iter()
+                .zip(vec.iter().skip(1))
+                .map(|(caller, callee)| {
+                    let caller_instance = callgraph.index_to_instance(*caller).unwrap();
+                    let caller_body = tcx.instance_mir(caller_instance.def);
+                    let callsites = callgraph.callsites(*caller, *callee).unwrap();
+                    callsites
+                        .into_iter()
+                        .map(|location| {
+                            let CallSiteLocation::FnDef(location) = location;
+                            format!("{:?}", caller_body.source_info(location).span)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
 }
 
 // Find the diagnosis info for relation(a, b), including a's ty & span, b's ty & span, and callchains.
