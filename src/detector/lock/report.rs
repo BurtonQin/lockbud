@@ -5,7 +5,9 @@
 //！while conflictlock diagnosis contanis a vector of deadlock diagnosis.
 //! Deadlock diagnosis consists of the first & second locks' type and span (a.k.a. src code location),
 //! and **all** possible callchains from first to second lock.
-#[derive(Debug)]
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub struct DeadlockDiagnosis {
     pub first_lock_type: String,
     pub first_lock_span: String,
@@ -33,12 +35,12 @@ impl DeadlockDiagnosis {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ReportContent<D> {
-    bug_kind: String,
-    possibility: String,
-    diagnosis: D,
-    explanation: String,
+    pub bug_kind: String,
+    pub possibility: String,
+    pub diagnosis: D,
+    pub explanation: String,
 }
 
 impl<D: std::fmt::Debug> ReportContent<D> {
@@ -52,7 +54,7 @@ impl<D: std::fmt::Debug> ReportContent<D> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Report {
     DoubleLock(ReportContent<DeadlockDiagnosis>),
     ConflictLock(ReportContent<Vec<DeadlockDiagnosis>>),
