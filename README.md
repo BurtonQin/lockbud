@@ -30,10 +30,29 @@ Test toys
 ```
 $ ./detect.sh toys/inter
 ```
-It will print 15 doublelock bugs like the following one:
+It will print 15 doublelock bugs in json format, like the following one:
 
 ```
-DoubleLock(ReportContent { bug_kind: "DoubleLock", possibility: "Possibly", diagnosis: DeadlockDiagnosis { first_lock_type: "ParkingLotWrite(i32)", first_lock_span: "src/main.rs:77:16: 77:32 (#0)", second_lock_type: "ParkingLotRead(i32)", second_lock_span: "src/main.rs:84:18: 84:33 (#0)", callchains: [[["src/main.rs:79:20: 79:52 (#0)"]]] }, explanation: "The first lock is not released when acquiring the second lock" })
+      {
+        "DoubleLock": {
+          "bug_kind": "DoubleLock",
+          "possibility": "Possibly",
+          "diagnosis": {
+            "first_lock_type": "ParkingLotWrite(i32)",
+            "first_lock_span": "src/main.rs:77:16: 77:32 (#0)",
+            "second_lock_type": "ParkingLotRead(i32)",
+            "second_lock_span": "src/main.rs:84:18: 84:33 (#0)",
+            "callchains": [
+              [
+                [
+                  "src/main.rs:79:20: 79:52 (#0)"
+                ]
+              ]
+            ]
+          },
+          "explanation": "The first lock is not released when acquiring the second lock"
+        }
+      }
 ```
 
 The output shows that there is possibly a doublelock bug. The DeadlockDiagnosis reads that the first lock is a parking_lot WriteLock acquired on src/main.rs:77 and the second lock is a parking_lot ReadLock aquired on src/main.rs:84. The first lock reaches the second lock through callsites src/main.rs:79. The explanation demonstrates the reason for doubelock.
@@ -44,7 +63,41 @@ $ ./detect.sh toys/conflict-inter
 It will print one conflictlock bug
 
 ```
-ConflictLock(ReportContent { bug_kind: "ConflictLock", possibility: "Possibly", diagnosis: [DeadlockDiagnosis { first_lock_type: "StdRwLockRead(i32)", first_lock_span: "src/main.rs:29:16: 29:40 (#0)", second_lock_type: "StdMutex(i32)", second_lock_span: "src/main.rs:36:10: 36:34 (#0)", callchains: [[["src/main.rs:31:20: 31:38 (#0)"]]] }, DeadlockDiagnosis { first_lock_type: "StdMutex(i32)", first_lock_span: "src/main.rs:18:16: 18:40 (#0)", second_lock_type: "StdRwLockWrite(i32)", second_lock_span: "src/main.rs:25:10: 25:35 (#0)", callchains: [[["src/main.rs:20:20: 20:35 (#0)"]]] }], explanation: "Locks mutually wait for each other to form a cycle" })
+      {
+        "ConflictLock": {
+          "bug_kind": "ConflictLock",
+          "possibility": "Possibly",
+          "diagnosis": [
+            {
+              "first_lock_type": "StdRwLockRead(i32)",
+              "first_lock_span": "src/main.rs:29:16: 29:40 (#0)",
+              "second_lock_type": "StdMutex(i32)",
+              "second_lock_span": "src/main.rs:36:10: 36:34 (#0)",
+              "callchains": [
+                [
+                  [
+                    "src/main.rs:31:20: 31:38 (#0)"
+                  ]
+                ]
+              ]
+            },
+            {
+              "first_lock_type": "StdMutex(i32)",
+              "first_lock_span": "src/main.rs:18:16: 18:40 (#0)",
+              "second_lock_type": "StdRwLockWrite(i32)",
+              "second_lock_span": "src/main.rs:25:10: 25:35 (#0)",
+              "callchains": [
+                [
+                  [
+                    "src/main.rs:20:20: 20:35 (#0)"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "explanation": "Locks mutually wait for each other to form a cycle"
+        }
+      }
 ```
 
 The output shows that there is possibly a conflictlock bug. The DeadlockDiagnosis is similar to doublelock bugs except that there are at least two diagnosis records. All the diagnosis records form a cycle, e.g. A list of records [(first_lock, second_lock), (second_lock', first_lock')] means that it is possible that first_lock is aquired and waits for second_lock in one thread, while second_lock' is aquired and waits for first_lock' in another thread, which incurs a conflictlock bug.
