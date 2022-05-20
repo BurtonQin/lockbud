@@ -367,12 +367,12 @@ fn track_callchains<'tcx>(
     paths
         .into_iter()
         .map(|vec| {
-            vec.iter()
-                .zip(vec.iter().skip(1))
-                .map(|(caller, callee)| {
-                    let caller_instance = callgraph.index_to_instance(*caller).unwrap();
+            vec.windows(2)
+                .map(|window| {
+                    let (caller, callee) = (window[0], window[1]);
+                    let caller_instance = callgraph.index_to_instance(caller).unwrap();
                     let caller_body = tcx.instance_mir(caller_instance.def);
-                    let callsites = callgraph.callsites(*caller, *callee).unwrap();
+                    let callsites = callgraph.callsites(caller, callee).unwrap();
                     callsites
                         .into_iter()
                         .map(|location| {
