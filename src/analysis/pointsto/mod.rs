@@ -15,6 +15,7 @@ use rustc_middle::mir::{
 };
 use rustc_middle::ty::{Instance, TyCtxt};
 
+use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph};
@@ -54,6 +55,8 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
                 }
                 ConstraintNode::Constant(constant) => {
                     graph.add_constant(constant);
+                    // For constant C, track *C.
+                    worklist.push_back(ConstraintNode::ConstantDeref(constant));
                 }
                 _ => {}
             }
@@ -97,6 +100,10 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
 
     /// pts(target) = pts(target) U pts(source), return true if pts(target) changed
     fn union_pts(&mut self, target: &ConstraintNode<'tcx>, source: &ConstraintNode<'tcx>) -> bool {
+        // skip Alloc target
+        if matches!(target, ConstraintNode::Alloc(_)) {
+            return false;
+        }
         let old_len = self.pts.get(target).unwrap().len();
         let source_pts = self.pts.get(source).unwrap().clone();
         let target_pts = self.pts.get_mut(target).unwrap();
@@ -191,6 +198,9 @@ impl<'tcx> ConstraintGraph<'tcx> {
         let lhs = self.get_or_insert_node(lhs);
         let rhs = self.get_or_insert_node(rhs);
         self.graph.add_edge(rhs, lhs, ConstraintEdge::Address);
+        // For a constant C, there may be deref like *C, **C, ***C, ... in a real program.
+        // For simplicity, we only track *C, and treat **C, ***C, ... the same as *C.
+        self.graph.add_edge(rhs, rhs, ConstraintEdge::Address);
     }
 
     fn add_address(&mut self, lhs: PlaceRef<'tcx>, rhs: PlaceRef<'tcx>) {
@@ -256,8 +266,8 @@ impl<'tcx> ConstraintGraph<'tcx> {
         v
     }
 
-    // *lhs = ?
-    // ?--|store|-->lhs
+    /// *lhs = ?
+    /// ?--|store|-->lhs
     fn store_sources(&self, lhs: &ConstraintNode<'tcx>) -> Vec<ConstraintNode<'tcx>> {
         let lhs = self.get_node(lhs).unwrap();
         let mut sources = Vec::new();
@@ -270,8 +280,8 @@ impl<'tcx> ConstraintGraph<'tcx> {
         sources
     }
 
-    // ? = *rhs
-    // rhs--|load|-->?
+    /// ? = *rhs
+    /// rhs--|load|-->?
     fn load_targets(&self, rhs: &ConstraintNode<'tcx>) -> Vec<ConstraintNode<'tcx>> {
         let rhs = self.get_node(rhs).unwrap();
         let mut targets = Vec::new();
@@ -284,8 +294,8 @@ impl<'tcx> ConstraintGraph<'tcx> {
         targets
     }
 
-    // ? = rhs
-    // rhs--|copy|-->?
+    /// ? = rhs
+    /// rhs--|copy|-->?
     fn copy_targets(&self, rhs: &ConstraintNode<'tcx>) -> Vec<ConstraintNode<'tcx>> {
         let rhs = self.get_node(rhs).unwrap();
         let mut targets = Vec::new();
@@ -298,24 +308,34 @@ impl<'tcx> ConstraintGraph<'tcx> {
         targets
     }
 
-    // if edge not exists, then add the edge and return true
+    /// if edge `from--|weight|-->to` not exists,
+    /// then add the edge and return true
     fn insert_edge(
         &mut self,
-        lhs: ConstraintNode<'tcx>,
-        rhs: ConstraintNode<'tcx>,
+        from: ConstraintNode<'tcx>,
+        to: ConstraintNode<'tcx>,
         weight: ConstraintEdge,
     ) -> bool {
-        let lhs = self.get_node(&lhs).unwrap();
-        let rhs = self.get_node(&rhs).unwrap();
-        if let Some(edge) = self.graph.find_edge(rhs, lhs) {
+        let from = self.get_node(&from).unwrap();
+        let to = self.get_node(&to).unwrap();
+        if let Some(edge) = self.graph.find_edge(from, to) {
             if let Some(w) = self.graph.edge_weight(edge) {
                 if *w == weight {
                     return false;
                 }
             }
         }
-        self.graph.add_edge(rhs, lhs, weight);
+        self.graph.add_edge(from, to, weight);
         true
+    }
+
+    /// Print the callgraph in dot format.
+    #[allow(dead_code)]
+    pub fn dot(&self) {
+        println!(
+            "{:?}",
+            Dot::with_config(&self.graph, &[Config::GraphContentOnly])
+        );
     }
 }
 
@@ -390,9 +410,17 @@ impl<'tcx> ConstraintGraphCollector<'tcx> {
                     }) => Some(AccessPattern::Constant(*literal)),
                 }
             }
-            Rvalue::Ref(_, _, place) | Rvalue::AddressOf(_, place) => {
-                Some(AccessPattern::Ref(place.as_ref()))
-            }
+            // Regard `p = &*q` as `p = q`
+            Rvalue::Ref(_, _, place) | Rvalue::AddressOf(_, place) => match place.as_ref() {
+                PlaceRef {
+                    local: l,
+                    projection: [ProjectionElem::Deref, ref remain @ ..],
+                } => Some(AccessPattern::Direct(PlaceRef {
+                    local: l,
+                    projection: remain,
+                })),
+                _ => Some(AccessPattern::Ref(place.as_ref())),
+            },
             _ => None,
         }
     }
@@ -401,7 +429,34 @@ impl<'tcx> ConstraintGraphCollector<'tcx> {
         self.graph.add_copy(dest, arg);
     }
 
-    fn finish(self) -> ConstraintGraph<'tcx> {
+    /// forall (p1, p2) where p1 is prefix of p1, add `p1 = p2`.
+    /// e.g. Place1{local1, &[f0]}, Place2{local1, &[f0,f1]},
+    /// since they have the same local
+    /// and Place1.projection is prefix of Place2.projection,
+    /// Add constraint `Place1 = Place2`.
+    fn add_partial_copy(&mut self) {
+        let nodes = self.graph.nodes();
+        for (idx, n1) in nodes.iter().enumerate() {
+            for n2 in nodes.iter().skip(idx + 1) {
+                if let (ConstraintNode::Place(p1), ConstraintNode::Place(p2)) = (n1, n2) {
+                    if p1.local == p2.local {
+                        if p1.projection.len() > p2.projection.len() {
+                            if &p1.projection[..p2.projection.len()] == p2.projection {
+                                self.graph.add_copy(*p2, *p1);
+                            }
+                        } else {
+                            if &p2.projection[..p1.projection.len()] == p1.projection {
+                                self.graph.add_copy(*p1, *p2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish(mut self) -> ConstraintGraph<'tcx> {
+        self.add_partial_copy();
         self.graph
     }
 }
@@ -595,11 +650,11 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
                 body.args_iter().any(|arg| arg == local)
             };
             let mut arg_places1 = pts1.iter().filter_map(|node| match node {
-                ConstraintNode::Place(place) if is_arg(place.local, body1) => Some(place),
+                ConstraintNode::Alloc(place) if is_arg(place.local, body1) => Some(place),
                 _ => None,
             });
             let mut arg_places2 = pts2.iter().filter_map(|node| match node {
-                ConstraintNode::Place(place) if is_arg(place.local, body2) => Some(place),
+                ConstraintNode::Alloc(place) if is_arg(place.local, body2) => Some(place),
                 _ => None,
             });
             if arg_places1.any(|place1| {
