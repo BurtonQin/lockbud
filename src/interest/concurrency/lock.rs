@@ -138,6 +138,7 @@ pub struct LockGuardInfo<'tcx> {
     pub lockguard_ty: LockGuardTy<'tcx>,
     pub span: Span,
     pub gen_locs: SmallVec<[Location; 4]>,
+    pub move_gen_locs: SmallVec<[Location; 4]>,
     pub kill_locs: SmallVec<[Location; 4]>,
 }
 
@@ -147,8 +148,13 @@ impl<'tcx> LockGuardInfo<'tcx> {
             lockguard_ty,
             span,
             gen_locs: Default::default(),
+            move_gen_locs: Default::default(),
             kill_locs: Default::default(),
         }
+    }
+
+    pub fn is_gen_only_by_move(&self) -> bool {
+        self.gen_locs == self.move_gen_locs
     }
 }
 
@@ -210,7 +216,10 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
                 }
                 PlaceContext::MutatingUse(context) => match context {
                     MutatingUseContext::Drop => info.kill_locs.push(location),
-                    MutatingUseContext::Store => info.gen_locs.push(location),
+                    MutatingUseContext::Store => {
+                        info.gen_locs.push(location);
+                        info.move_gen_locs.push(location);
+                    }
                     MutatingUseContext::Call => info.gen_locs.push(location),
                     _ => {}
                 },

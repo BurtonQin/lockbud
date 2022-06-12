@@ -271,8 +271,12 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 }
                 _ => {
                     // if unlikely doublelock, add the pair into graph to check conflictlock
-                    let node = conflictlock_graph.add_node((*a, *b));
-                    relation_to_nodes.insert((*a, *b), node);
+                    // when the lockguards are gen by call rather than move
+                    if !lockguards[a].is_gen_only_by_move() && !lockguards[b].is_gen_only_by_move()
+                    {
+                        let node = conflictlock_graph.add_node((*a, *b));
+                        relation_to_nodes.insert((*a, *b), node);
+                    }
                 }
             }
         }
