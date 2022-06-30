@@ -491,7 +491,7 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'tcx> {
             ..
         } = &terminator.kind
         {
-            if let (&[Operand::Move(arg)], Some((dest, _))) = (args.as_slice(), destination) {
+            if let (&[Operand::Move(arg)], dest) = (args.as_slice(), destination) {
                 self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
             };
         }
