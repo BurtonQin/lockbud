@@ -12,7 +12,7 @@ doublelock and locks in conflicting order (conflictlock for brevity).
 Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free.
 
 ## Install
-Currently supports rustc 1.62.0-nightly (082e4ca49 2022-04-26)
+Currently supports rustc 1.63.0-nightly (1f34da9ec 2022-06-14)
 ```
 $ git clone https://github.com/BurtonQin/lockbud.git
 $ cd lockbud
@@ -115,6 +115,15 @@ cargo clean
 ```
 before re-running lockbud.
 
+You can also specify blacklist or whitelist of crate names.
+
+The `-b` implies the list is a blacklist.
+
+The `-l` is followed by a list of crate names seperated by commas.
+```
+$ cd YourProject; cargo clean; cargo lockbud -k deadlock -b -l cc,tokio_util,indicatif
+```
+
 ## How it works
 In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
 So we can track the lifetime of lockguards to detect lock-related bugs.
@@ -156,6 +165,11 @@ Bugs detected and fixed (one PR may fix multiple bugs):
 9. https://github.com/mimblewimble/grin/pull/3340
 10. https://github.com/sigp/lighthouse/pull/1241
 11. https://github.com/rust-windowing/winit/pull/1579
+12. https://github.com/solana-labs/solana/pull/26046
+13. https://github.com/solana-labs/solana/pull/26047
+14. https://github.com/solana-labs/solana/pull/26053
+15. https://github.com/qdrant/qdrant/issues/724
+16. https://github.com/apache/incubator-teaclave-sgx-sdk/pull/269
 
 ## License
 The lockbud Project is dual-licensed under Apache 2.0 and MIT terms.
