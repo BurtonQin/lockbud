@@ -241,7 +241,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
         }
     }
 
-    info!("deadlock analyzing crate {:?}", trimmed_name);
+    info!("critical section analyzing crate {:?}", trimmed_name);
     
     
     let fn_ids: Vec<LocalDefId> = tcx.mir_keys(())
@@ -274,16 +274,17 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
     
     let mut filter_set: CSCallFilterSet = HashMap::new();
 
-    filter_set.insert(CriticalSectionCall::ChSend, &|tcx, cs|{
-        match cs.call_by_type {
-            Some(caller_ty) => {
-                let fname = tcx.item_name(cs.callee.def_id());
-                let caller_ty_name = caller_ty.to_string();
-                return caller_ty_name.contains("std::sync::mpsc::Sender") && fname.to_string() == "send";
-            },
-            None => false,
-        }
-    } );
+    // send has buffer, so ignore it
+    // filter_set.insert(CriticalSectionCall::ChSend, &|tcx, cs|{
+    //     match cs.call_by_type {
+    //         Some(caller_ty) => {
+    //             let fname = tcx.item_name(cs.callee.def_id());
+    //             let caller_ty_name = caller_ty.to_string();
+    //             return caller_ty_name.contains("std::sync::mpsc::Sender") && fname.to_string() == "send";
+    //         },
+    //         None => false,
+    //     }
+    // } );
 
     filter_set.insert(CriticalSectionCall::ChRecv, &|tcx, cs|{
         match cs.call_by_type {
@@ -338,7 +339,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
     }
     
     if result.calls.len() > 0 {
-        info!("calls: {:?}", result.calls);
+        info!("possible blocking calls: {:?}", result.calls);
 
     }
 
