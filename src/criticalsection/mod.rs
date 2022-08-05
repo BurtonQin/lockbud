@@ -254,14 +254,14 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
     .copied()
     .collect();
 
-    //info!("functions: {}", fn_ids.len());
+    info!("functions: {}", fn_ids.len());
     let lifetimes = Rc::new(RefCell::new(Lifetimes::new()));
     let mut callgraph = call_graph::CallGraph::new();
     fn_ids
     .clone()
     .into_iter()
     .for_each(|fn_id| {
-        // println!("{:?}", fn_id);
+        info!("analyzing {:?}", fn_id);
         let body = tcx.optimized_mir(fn_id);
         analyze_lifetimes(tcx, body, lifetimes.clone());
         analyze_callgraph(tcx, body, &mut callgraph);
@@ -310,6 +310,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
     
     for (fn_id, local_lifetimes) in &lifetimes.borrow().body_local_lifetimes {
         let body = tcx.optimized_mir(*fn_id);
+
         let interested_locals = filter_body_locals(body, |ty| {
             match parse_lockguard_type(&ty) {
                 Some(guard) => {
@@ -338,9 +339,9 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
         serde_json::to_writer(&File::create(out_file)?, &result)?;
     }
     
+    info!("possible blocking {:?} calls", result.calls.len());
     if result.calls.len() > 0 {
-        info!("possible blocking calls: {:?}", result.calls);
-
+        info!("{:?}", result.calls);
     }
 
     // for sec in &result.critical_sections {
