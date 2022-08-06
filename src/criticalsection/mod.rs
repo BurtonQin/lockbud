@@ -103,7 +103,14 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
     let callsites = &callgraph.callsites[&body.source.def_id()];
     for cs in callsites {
         let callee_id = cs.callee.def_id();
-
+        // match cs.call_by_type {
+        //     Some(caller_ty) => {
+        //         let fname = tcx.item_name(cs.callee.def_id());
+        //         let caller_ty_name = caller_ty.to_string();
+        //         info!("checking call: {:?} {:?}", caller_ty_name, fname);
+        //     },
+        //     None => {},
+        // }
         // check recursion
         for ch in &callchains {
             if ch.callee.def_id() == callee_id {
@@ -291,7 +298,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
             Some(caller_ty) => {
                 let fname = tcx.item_name(cs.callee.def_id());
                 let caller_ty_name = caller_ty.to_string();
-                return caller_ty_name.contains("std::sync::mpsc::Receiver") && fname.to_string() == "recv";
+                return caller_ty_name.contains("std::sync::mpsc") && fname.to_string() == "recv";
             },
             None => false,
         }
@@ -321,6 +328,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
             false
         });
 
+        info!("{:?}: {} lockguards", fn_id, interested_locals.len());
 
         for il in interested_locals {
             if !local_lifetimes.contains_key(&il) {
