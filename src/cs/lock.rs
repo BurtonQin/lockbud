@@ -5,9 +5,9 @@ use rustc_span::Span;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LockGuardSrc {
-    ParamSrc(ParamSrcContext),
-    LocalSrc(LocalSrcContext),
-    GlobalSrc(GlobalSrcContext),
+    //ParamSrc(ParamSrcContext),
+    //LocalSrc(LocalSrcContext),
+    //GlobalSrc(GlobalSrcContext),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

@@ -1,7 +1,5 @@
-use std::{fmt, collections::{HashSet, HashMap}};
-
-use log::info;
-use rustc_hir::def_id::{LocalDefId, DefId};
+use std::{collections::{HashSet, HashMap}};
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{Local, Location};
 use rustc_span::Span;
 
@@ -44,7 +42,7 @@ impl Lifetimes {
             loc2life.insert( local, Lifetime::new(body_id));
         }
 
-        let mut ll = loc2life.get_mut(&local).unwrap();
+        let ll = loc2life.get_mut(&local).unwrap();
         ll.live_locs.insert(loc);
         ll.live_span.push(span);
     }

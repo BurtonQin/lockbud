@@ -1,46 +1,15 @@
 extern crate rustc_hir;
 extern crate rustc_middle;
 extern crate rustc_span;
-use rustc_hir::def_id::{LocalDefId, LOCAL_CRATE};
-use rustc_middle::mir::{BasicBlock, Body, Location, START_BLOCK, TerminatorKind};
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::mir::{Body, Location, START_BLOCK, TerminatorKind};
 use rustc_span::Span;
 
 use std::cmp::Ordering;
 
 use std::fmt;
 
-use std::collections::{HashMap, HashSet, LinkedList};
-// use crate::lifetime_visualizer::info::{CrateLocalId};
+use std::collections::{HashMap, HashSet};
 
-// collect span for BasicBlock
-// collect span for Function
-
-// fn merge_location(HashMap<CrateLocalId, HashSet<Location>>) -> HashMap<> {
-
-// }
-
-/// Represents the range of a variable in the source code: 
-/// filename, begin (line num, column num), end (line num, column num)
-pub struct Range {
-    filename: String,
-    begin: (u32, u32),
-    end: (u32, u32),
-}
-
-impl Range {
-    fn new(filename: &str, begin: (u32, u32), end: (u32, u32)) -> Self {
-        Self {
-            filename: filename.to_string(),
-            begin,
-            end,
-        }
-    }
-
-    // fn union(&self, other: &Range) -> Self {
-
-    // }
-}
 /// A position in a file: (line num, column num)
 #[derive(Eq, Clone, Copy, Hash, Debug)]
 pub struct PosInFile(pub u32, pub u32);
@@ -108,9 +77,11 @@ impl RangesInFile {
             ranges
         }
     }
+    #[allow(dead_code)]
     fn add(&mut self, range: RangeInFile) {
         self.ranges.insert(range);
     }
+    #[allow(dead_code)]
     fn merge(self) -> Vec<RangeInFile> {
         let mut result: Vec<RangeInFile> = Vec::new();
         let mut worklist: Vec<RangeInFile> = self.ranges.into_iter().collect();
@@ -139,12 +110,14 @@ pub struct RangesAcrossFiles {
 }
 
 impl RangesAcrossFiles {
+    #[allow(dead_code)]
     pub fn add_locs(&mut self, locs: &HashSet<Location>, body: &Body) {
         for loc in locs {
             let (filename, range) = parse_span(&get_span(loc, body));
             self.ranges.entry(filename).or_insert_with(HashSet::new).insert(range);
         }
     }
+    #[allow(dead_code)]
     pub fn merge(self) -> HashMap<String, Vec<RangeInFile>> {
         self.ranges.into_iter().map(|(filename, file_ranges)| 
             (filename, RangesInFile::new(file_ranges).merge())
@@ -157,6 +130,7 @@ impl RangesAcrossFiles {
 // end: all the terminators
 // merge them
 // Can a function spans across multiple files? Need to be verified. I assume it cannot for now.
+#[allow(dead_code)]
 pub fn get_fn_range(body: &Body) -> (String, RangeInFile) {
     let mut term_spans: Vec<Span> = Vec::new();
     for (_, bb_data) in body.basic_blocks().iter_enumerated() {
@@ -221,6 +195,7 @@ mod test {
     }
 }
 
+#[allow(dead_code)]
 pub fn merge_spans(locs: &HashSet<Location>, body: &Body) {
     let mut spans: HashSet<Span> = HashSet::new();
     for loc in locs {
@@ -231,10 +206,11 @@ pub fn merge_spans(locs: &HashSet<Location>, body: &Body) {
 
 // e.g.
 // src/main.rs:4:13: 7:6
+#[allow(dead_code)]
 fn parse_span_str(span_str: &str) -> RangeInFile {
     let labels: Vec<&str> = span_str.split(":").collect();
     assert!(labels.len() == 5);
-    let filename = labels[0];
+    let _filename = labels[0];
     let line_0: u32 = labels[1].parse().unwrap();
     let col_0: u32 = labels[2].parse().unwrap();
     let line_1: u32 = labels[3][1..].parse().unwrap();
@@ -247,7 +223,7 @@ pub fn parse_span(span: &Span) -> (String, RangeInFile) {
     let labels: Vec<&str> = span_str.split(":").collect();
     assert!(labels.len() == 5, "{}", span_str);
     let filename = labels[0];
-    let mut abs_file = std::fs::canonicalize(&filename).unwrap();
+    let abs_file = std::fs::canonicalize(&filename).unwrap();
    
     let line_0: u32 = labels[1].parse().unwrap();
     let col_0: u32 = labels[2].parse().unwrap();
@@ -257,6 +233,7 @@ pub fn parse_span(span: &Span) -> (String, RangeInFile) {
     (abs_file.into_os_string().into_string().unwrap(), RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1)))
 }
 
+#[allow(dead_code)]
 fn get_span(loc: &Location, body: &Body) -> Span {
     let bb_data = &body.basic_blocks()[loc.block];
     if loc.statement_index < bb_data.statements.len() {
