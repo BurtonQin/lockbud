@@ -2,7 +2,7 @@
 //! Inspired by <https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/main.rs>
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-
+#![feature(map_try_insert)]
 extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;

@@ -8,7 +8,7 @@ use super::ty::{Lifetimes};
 
 
 pub fn analyze_lifetimes<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lifetimes: Rc<RefCell<Lifetimes>>){
-    let analysis = LifetimeAnalysis::new(tcx, body, lifetimes);
+    let analysis = LifetimeAnalysis::new(body, lifetimes);
 
     analysis
     .into_engine(tcx, body)
@@ -16,19 +16,19 @@ pub fn analyze_lifetimes<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, life
 
 }
 struct LifetimeAnalysis<'tcx, 'a> {
-    tcx: TyCtxt<'tcx>,
+    // tcx: TyCtxt<'tcx>,
     body: &'a Body<'tcx>,
     lifetimes: Rc<RefCell<Lifetimes>>
 }
 
 impl<'tcx, 'a> LifetimeAnalysis<'tcx, 'a> {
     fn new(
-        tcx: TyCtxt<'tcx>,
+        // tcx: TyCtxt<'tcx>,
         body: &'a Body<'tcx>,
         lifetimes: Rc<RefCell<Lifetimes>>
     ) -> Self {
         Self {
-            tcx,
+            // tcx,
             body,
             lifetimes
         }
