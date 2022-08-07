@@ -5,6 +5,7 @@ extern crate rustc_hir;
 
 use std::path::PathBuf;
 
+use crate::cs;
 use crate::options::{CrateNameList, DetectorKind, Options};
 use log::{debug, warn};
 use rustc_driver::Compilation;
@@ -71,7 +72,10 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             .global_ctxt()
             .unwrap()
             .peek_mut()
-            .enter(|tcx| self.analyze_with_lockbud(compiler, tcx));
+            .enter(|tcx| {
+                self.analyze_with_lockbud(compiler, tcx);
+                cs::analyze(tcx).unwrap();
+        });
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop

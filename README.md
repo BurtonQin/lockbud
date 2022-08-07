@@ -8,8 +8,10 @@ I focus on Rust unsafe code and concurrency bugs in this paper.
 Please refer to our paper for more interesting concurrency and memory bug categories in Rust.
 
 This project is my initial efforts to improve the concurrency safety in Rust ecosystem by statically detecting two common kinds of deadlock bugs:
-doublelock and locks in conflicting order (conflictlock for brevity).
-Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free.
+doublelock and locks in conflicting order (conflictlock for brevity) and warning potential deadlock
+bugs caused by conducting channel (channellock for brevity) or conditional variable operations (condlock for brevity) 
+in a critical section. Ongoing work includes other concurrency bugs like atomicity violation and some memory 
+bugs like use-after-free.
 
 ## Install
 Currently supports rustc 1.63.0-nightly (1f34da9ec 2022-06-14)
