@@ -113,8 +113,9 @@ impl RangesAcrossFiles {
     #[allow(dead_code)]
     pub fn add_locs(&mut self, locs: &HashSet<Location>, body: &Body) {
         for loc in locs {
-            let (filename, range) = parse_span(&get_span(loc, body));
-            self.ranges.entry(filename).or_insert_with(HashSet::new).insert(range);
+            if let Some((filename, range)) = parse_span(&get_span(loc, body)) {
+                self.ranges.entry(filename).or_insert_with(HashSet::new).insert(range);
+            }
         }
     }
     #[allow(dead_code)]
@@ -123,40 +124,6 @@ impl RangesAcrossFiles {
             (filename, RangesInFile::new(file_ranges).merge())
         ).collect()
     }
-}
-
-// get fn ranges: 
-// begin: START_BLOCK
-// end: all the terminators
-// merge them
-// Can a function spans across multiple files? Need to be verified. I assume it cannot for now.
-#[allow(dead_code)]
-pub fn get_fn_range(body: &Body) -> (String, RangeInFile) {
-    let mut term_spans: Vec<Span> = Vec::new();
-    for (_, bb_data) in body.basic_blocks().iter_enumerated() {
-        let term = bb_data.terminator();
-        match term.kind {
-            TerminatorKind::Resume | TerminatorKind::Unreachable => { continue; },
-            _ => {},
-        }
-        term_spans.push(bb_data.terminator().source_info.span);
-    }
-    let mut end_pos_across_files: HashMap<String, PosInFile> = HashMap::new();
-    for term_span in term_spans {
-        let (filename, term_range) = parse_span(&term_span);
-        let term_end_pos = term_range.1;
-        if let Some(end_pos) = end_pos_across_files.get_mut(&filename) {
-            if *end_pos < term_end_pos {
-                *end_pos = term_end_pos;
-            }
-        } else {
-            end_pos_across_files.insert(filename, term_end_pos);
-        }
-    }
-    let (filename, start_range) = parse_span(&body.basic_blocks()[START_BLOCK].statements[0].source_info.span);
-    let start_begin_pos = start_range.0;
-    let range_in_file = RangeInFile(start_begin_pos, *end_pos_across_files.get(&filename).unwrap());
-    (filename, range_in_file)
 }
 
 
@@ -218,10 +185,12 @@ fn parse_span_str(span_str: &str) -> RangeInFile {
     RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1))
 }
 
-pub fn parse_span(span: &Span) -> (String, RangeInFile) {
+pub fn parse_span(span: &Span) -> Option<(String, RangeInFile)> {
     let span_str = format!("{:?}", span);
     let labels: Vec<&str> = span_str.split(":").collect();
-    assert!(labels.len() == 5, "{}", span_str);
+    if labels.len() != 5 {
+        return None;
+    }
     let filename = labels[0];
     let abs_file = std::fs::canonicalize(&filename).unwrap();
    
@@ -230,7 +199,7 @@ pub fn parse_span(span: &Span) -> (String, RangeInFile) {
     let line_1: u32 = labels[3][1..].parse().unwrap();
     let last_part_end = labels[4].find(" ").unwrap();
     let col_1: u32 = labels[4][..last_part_end].parse().unwrap();
-    (abs_file.into_os_string().into_string().unwrap(), RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1)))
+    Some((abs_file.into_os_string().into_string().unwrap(), RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1))))
 }
 
 #[allow(dead_code)]

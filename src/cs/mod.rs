@@ -65,9 +65,12 @@ pub struct AnalysisResult {
 
 fn callchains_to_spans<'tcx>(callchains:& Vec<CallSite<'tcx>>) -> Vec<(String, u32, u32, u32, u32)> {
     callchains.iter()
-    .map(|c| {
-        let (filename, rg) = parse_span(&c.span);
-        return (filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1)
+    .filter_map(|c| {
+        if let Some((filename, rg)) = parse_span(&c.span) {
+            return Some((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1))
+        } else {
+            None
+        }
     })
     .collect()
 }
@@ -210,9 +213,13 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
 fn lifetime_to_highlight_area(l: &Lifetime) -> HighlightArea {
     HighlightArea {
         ranges:l.live_span.iter()
-        .map(|c| {
-            let (filename, rg) = parse_span(&c);
-            return (filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1)
+        .filter_map(|c| {
+            if let Some((filename, rg)) = parse_span(&c) {
+                Some((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1))
+            } else {
+                None
+            }
+             
         })
         .collect(),
     }
