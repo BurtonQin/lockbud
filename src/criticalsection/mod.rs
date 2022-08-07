@@ -2,7 +2,7 @@
 
 use std::{collections::{HashMap, HashSet}, rc::Rc, cell::RefCell, fs::{File, self}, env, ffi::OsString, fmt::Display};
 
-use log::info;
+use log::debug;
 use rustc_hir::def_id::{LOCAL_CRATE, LocalDefId, DefId};
 use rustc_middle::{ty::{TyCtxt, Ty, InstanceDef, TypeFoldable}, mir::{Body, Local, Terminator, StatementKind, TerminatorKind}};
 use rustc_span::Symbol;
@@ -107,7 +107,7 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
         //     Some(caller_ty) => {
         //         let fname = tcx.item_name(cs.callee.def_id());
         //         let caller_ty_name = caller_ty.to_string();
-        //         info!("checking call: {:?} {:?}", caller_ty_name, fname);
+        //         debug!("checking call: {:?} {:?}", caller_ty_name, fname);
         //     },
         //     None => {},
         // }
@@ -248,7 +248,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
         }
     }
 
-    info!("critical section analyzing crate {:?}", trimmed_name);
+    debug!("critical section analyzing crate {:?}", trimmed_name);
     
     
     let fn_ids: Vec<LocalDefId> = tcx.mir_keys(())
@@ -261,14 +261,14 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
     .copied()
     .collect();
 
-    info!("functions: {}", fn_ids.len());
+    debug!("functions: {}", fn_ids.len());
     let lifetimes = Rc::new(RefCell::new(Lifetimes::new()));
     let mut callgraph = call_graph::CallGraph::new();
     fn_ids
     .clone()
     .into_iter()
     .for_each(|fn_id| {
-        info!("analyzing {:?}", fn_id);
+        debug!("analyzing {:?}", fn_id);
         let body = tcx.optimized_mir(fn_id);
         analyze_lifetimes(tcx, body, lifetimes.clone());
         analyze_callgraph(tcx, body, &mut callgraph);
@@ -328,7 +328,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
             false
         });
 
-        info!("{:?}: {} lockguards", fn_id, interested_locals.len());
+        debug!("{:?}: {} lockguards", fn_id, interested_locals.len());
 
         for il in interested_locals {
             if !local_lifetimes.contains_key(&il) {
@@ -347,15 +347,15 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
         serde_json::to_writer(&File::create(out_file)?, &result)?;
     }
     
-    info!("possible blocking {:?} calls", result.calls.len());
+    debug!("possible blocking {:?} calls", result.calls.len());
     if result.calls.len() > 0 {
-        info!("{:?}", result.calls);
+        debug!("{:?}", result.calls);
     }
 
     // for sec in &result.critical_sections {
-    //     info!("body Id {:?}", sec.body_id);
+    //     debug!("body Id {:?}", sec.body_id);
     //     for sp in &sec.live_span {
-    //         info!("span {:?}", sp);
+    //         debug!("span {:?}", sp);
     //     }
     // }
 
