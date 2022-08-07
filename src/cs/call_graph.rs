@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use rustc_hir::def_id::DefId;
-use rustc_middle::{ty::{TyCtxt, Instance, PolyFnSig, InstanceDef, Ty, subst::Subst}, mir::{Operand, Body, BasicBlock, BasicBlockData, TerminatorKind, visit::Visitor, Location}};
+use rustc_middle::{ty::{TyCtxt, Instance, PolyFnSig, InstanceDef, Ty, subst::Subst}, mir::{Operand, Body, TerminatorKind, visit::Visitor, Location}};
 use rustc_span::{Span, Symbol};
 use rustc_middle::ty::FnDef;
 
@@ -35,6 +35,7 @@ impl<'tcx> CallGraph<'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn raw_pretty_print(&self) {
         for (caller, callees) in &self.calls {
             println!("caller {:?}, callees: {:?}", caller, callees);
@@ -43,6 +44,7 @@ impl<'tcx> CallGraph<'tcx> {
 
     }
 
+    #[allow(dead_code)]
     fn pretty_print(&self, tcx: TyCtxt<'tcx>){
         for (caller, callees) in &self.calls {
             let caller_name = tcx.item_name(*caller);
@@ -78,7 +80,7 @@ pub fn analyze_callgraph<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, call
             }
             match check_mir_is_available(tcx, body_to_visit, &cs.callee) {
                 Ok(()) => {},
-                Err(reason) => {
+                Err(_reason) => {
                     //let callee_name = tcx.item_name(callee_def_id);
                     // eprintln!("MIR of {} is unavailable: {}", callee_name, reason);
                     continue;
@@ -112,7 +114,7 @@ impl<'tcx, 'a> Visitor<'tcx> for BodyCallVisitor<'tcx, 'a> {
         }
 
         
-        if let TerminatorKind::Call { ref args, ref func, ref destination, .. } = terminator.kind {
+        if let TerminatorKind::Call { ref args, ref func, .. } = terminator.kind {
             let func_ty = func.ty(self.body, self.tcx);
             if let FnDef(def_id, substs) = *func_ty.kind() {
                 // To resolve an instance its substs have to be fully normalized.

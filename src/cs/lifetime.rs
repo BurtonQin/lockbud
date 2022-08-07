@@ -1,13 +1,8 @@
-use std::{collections::HashMap, cell::RefCell, rc::Rc};
-
-use log::info;
-use rustc_hir::def_id::{LocalDefId, DefId};
+use std::{cell::RefCell, rc::Rc};
 use rustc_index::bit_set::BitSet;
-use rustc_middle::{ty::{TyCtxt, Ty}, mir::{Body, Local, BasicBlock, StatementKind, TerminatorKind, Rvalue, Location, Operand}};
+use rustc_middle::{ty::TyCtxt, mir::{Body, Local, BasicBlock, StatementKind, TerminatorKind, Rvalue, Operand}};
 use rustc_mir_dataflow::Analysis;
 use rustc_mir_dataflow::CallReturnPlaces;
-use rustc_span::Span;
-
 use super::ty::{Lifetimes};
 
 
@@ -48,7 +43,7 @@ impl<'tcx, 'a> rustc_mir_dataflow::AnalysisDomain<'tcx> for LifetimeAnalysis<'tc
         BitSet::new_empty(body.local_decls.len())
     }
 
-    fn initialize_start_block(&self, body: &Body<'tcx>, _: &mut Self::Domain) {
+    fn initialize_start_block(&self, _body: &Body<'tcx>, _: &mut Self::Domain) {
         // no borrows of code region_scopes have been taken prior to
         // function execution, so this method has no effect.
     }
@@ -74,7 +69,7 @@ impl<'tcx, 'a> rustc_mir_dataflow::Analysis<'tcx> for LifetimeAnalysis<'tcx, 'a>
             StatementKind::StorageDead(local) => {
                 state.remove(local);
             }
-            StatementKind::Assign( box (lhs, ref rhs)) => {
+            StatementKind::Assign( box (_lhs, ref rhs)) => {
                 match rhs {
                     Rvalue::Use(op) => {
                         match op {
@@ -107,13 +102,11 @@ impl<'tcx, 'a> rustc_mir_dataflow::Analysis<'tcx> for LifetimeAnalysis<'tcx, 'a>
         let mut lts = self.lifetimes.borrow_mut();
 
         match &terminator.kind {
-            TerminatorKind::Drop { place, target, unwind } => {
+            TerminatorKind::Drop {place, ..} => {
                 state.remove(place.local);
             }
-            TerminatorKind::Call { func, args, destination, cleanup, from_hir_call, fn_span, target } => {
-                
+            TerminatorKind::Call {..} => {
                 for livelocal in state.iter() {
-                    
                     lts.add_live_loc(body_id, livelocal, location, terminator.source_info.span);
                 }
             }
@@ -123,9 +116,9 @@ impl<'tcx, 'a> rustc_mir_dataflow::Analysis<'tcx> for LifetimeAnalysis<'tcx, 'a>
 
     fn apply_call_return_effect(
         &self,
-        state: &mut Self::Domain,
-        block: BasicBlock,
-        return_places: CallReturnPlaces<'_, 'tcx>
+        _state: &mut Self::Domain,
+        _block: BasicBlock,
+        _return_places: CallReturnPlaces<'_, 'tcx>
     ) {
         
     }

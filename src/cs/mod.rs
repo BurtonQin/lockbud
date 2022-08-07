@@ -1,8 +1,8 @@
 
 
-use std::{collections::{HashMap, HashSet}, rc::Rc, cell::RefCell, fs::{File, self}, env, ffi::OsString, fmt::Display};
+use std::{collections::{HashMap}, rc::Rc, cell::RefCell, fs::{File, self}, env, fmt::Display};
 
-use log::debug;
+use log::info;
 use rustc_hir::def_id::{LOCAL_CRATE, LocalDefId, DefId};
 use rustc_middle::{ty::{TyCtxt, Ty, InstanceDef, TypeFoldable}, mir::{Body, Local, Terminator, StatementKind, TerminatorKind}};
 use rustc_span::Symbol;
@@ -66,16 +66,7 @@ fn callchains_to_spans<'tcx>(callchains:& Vec<CallSite<'tcx>>) -> Vec<(String, u
     .collect()
 }
 
-fn lifetime_to_highlight_area(l: &Lifetime) -> HighlightArea {
-    HighlightArea {
-        ranges:l.live_span.iter()
-        .map(|c| {
-            let (filename, rg) = parse_span(&c);
-            return (filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1)
-        })
-        .collect(),
-    }
-}
+
 
 pub fn filter_body_locals(body: &Body, filter: fn(Ty) -> bool) -> Vec<Local> {
     body.local_decls
@@ -320,7 +311,7 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
 
         let interested_locals = filter_body_locals(body, |ty| {
             match parse_lockguard_type(&ty) {
-                Some(guard) => {
+                Some(_guard) => {
                     return true;
                 },
                 None => {},

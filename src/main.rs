@@ -21,7 +21,7 @@ mod callbacks;
 mod detector;
 mod interest;
 mod options;
-mod criticalsection;
+mod cs;
 
 use log::debug;
 use options::Options;
