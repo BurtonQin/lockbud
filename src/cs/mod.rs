@@ -8,6 +8,8 @@ use rustc_middle::{ty::{TyCtxt, Ty, InstanceDef}, mir::{Body, Local, Location}};
 use serde::{Serialize, Deserialize};
 
 
+use crate::{detector::lock::Report, cs::range::parse_span_str};
+
 use self::{ty::{Lifetimes, Lifetime}, lifetime::analyze_lifetimes, lock::parse_lockguard_type, call_graph::CallSite, range::parse_span};
 
 
@@ -24,7 +26,11 @@ use self::call_graph::analyze_callgraph;
 pub enum CriticalSectionCall {
     ChSend,
     ChRecv,
-    CondVarWait
+    CondVarWait,
+
+    // FIXME: These are not critical section calls, just temporary place here
+    DoubleLock,
+    ConflictLock
 }
 
 impl Display for CriticalSectionCall {
@@ -33,6 +39,8 @@ impl Display for CriticalSectionCall {
             CriticalSectionCall::ChSend => write!(f, "{}", "channel send"),
             CriticalSectionCall::ChRecv => write!(f, "{}", "channel recv"),
             CriticalSectionCall::CondVarWait =>  write!(f, "{}", "conditional variable wait"),
+            CriticalSectionCall::DoubleLock =>  write!(f, "{}", "double lock"),
+            CriticalSectionCall::ConflictLock =>  write!(f, "{}", "conflict lock"),
         }
     }
 }
@@ -341,7 +349,8 @@ pub fn check_cond_var_waits<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, l
     }
 }
 
-pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>>  {
+// FIXME: temporary patch for print boqin's report and this together
+pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<AnalysisResult, Box<dyn std::error::Error>>  {
     let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
     let trimmed_name: String = crate_name.trim_matches('\"').to_string();
     let dl_crate_res = env::var("__DL_CRATE");
@@ -480,6 +489,75 @@ pub fn analyze(tcx: TyCtxt) -> Result<AnalysisResult, Box<dyn std::error::Error>
         }
 
 
+    }
+
+    if let Some(breports) = boqin_reports {
+        for report in breports {
+            match report {
+                Report::DoubleLock(content) => {
+                    let mut cs = CallInCriticalSection {
+                        callchains: Vec::new(),
+                        ty: CriticalSectionCall::DoubleLock
+                    };
+
+                    
+
+                    if let Some((filename, rg)) = parse_span_str(&content.diagnosis.first_lock_span) {
+                        cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1));
+
+                    } 
+
+                    if let Some((filename, rg)) = parse_span_str(&content.diagnosis.second_lock_span) {
+                        cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1));
+
+                    } 
+                    for c in &content.diagnosis.callchains {
+                        for cc in c {
+                            for ccc in cc {
+
+                                if let Some((filename, rg)) = parse_span_str(ccc) {
+                                    cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1));
+
+                                } 
+
+                            }
+                        }
+                    }
+                    result.calls.insert(cs);
+                    
+                },
+                Report::ConflictLock(content) => {
+                    let mut cs = CallInCriticalSection {
+                        callchains: Vec::new(),
+                        ty: CriticalSectionCall::ConflictLock
+                    };
+                    for d in content.diagnosis {
+                        if let Some((filename, rg)) = parse_span_str(&d.first_lock_span) {
+                            cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1));
+    
+                        } 
+    
+                        if let Some((filename, rg)) = parse_span_str(&d.second_lock_span) {
+                            cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1));
+    
+                        } 
+                        for c in &d.callchains {
+                            for cc in c {
+                                for ccc in cc {
+                                    if let Some((filename, rg)) = parse_span_str(ccc) {
+                                        cs.callchains.push((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1))
+    
+                                    } 
+    
+                                }
+                            }
+                        }
+                    }   
+                    
+                    result.calls.insert(cs);
+                },
+            }
+        }
     }
 
 

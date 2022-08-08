@@ -1,7 +1,7 @@
 extern crate rustc_hir;
 extern crate rustc_middle;
 extern crate rustc_span;
-use rustc_middle::mir::{Body, Location, START_BLOCK, TerminatorKind};
+use rustc_middle::mir::{Body, Location};
 use rustc_span::Span;
 
 use std::cmp::Ordering;
@@ -172,21 +172,8 @@ pub fn merge_spans(locs: &HashSet<Location>, body: &Body) {
 }
 
 // e.g.
-// src/main.rs:4:13: 7:6
-#[allow(dead_code)]
-fn parse_span_str(span_str: &str) -> RangeInFile {
-    let labels: Vec<&str> = span_str.split(":").collect();
-    assert!(labels.len() == 5);
-    let _filename = labels[0];
-    let line_0: u32 = labels[1].parse().unwrap();
-    let col_0: u32 = labels[2].parse().unwrap();
-    let line_1: u32 = labels[3][1..].parse().unwrap();
-    let col_1: u32 = labels[4].parse().unwrap();
-    RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1))
-}
-
-pub fn parse_span(span: &Span) -> Option<(String, RangeInFile)> {
-    let span_str = format!("{:?}", span);
+// src/main.rs:4:13: 7:6 (#..)
+pub fn parse_span_str(span_str: &str) -> Option<(String, RangeInFile)> {
     let labels: Vec<&str> = span_str.split(":").collect();
     if labels.len() != 5 {
         return None;
@@ -200,6 +187,11 @@ pub fn parse_span(span: &Span) -> Option<(String, RangeInFile)> {
     let last_part_end = labels[4].find(" ").unwrap();
     let col_1: u32 = labels[4][..last_part_end].parse().unwrap();
     Some((abs_file.into_os_string().into_string().unwrap(), RangeInFile(PosInFile(line_0, col_0), PosInFile(line_1, col_1))))
+}
+
+pub fn parse_span(span: &Span) -> Option<(String, RangeInFile)> {
+    let span_str = format!("{:?}", span);
+    parse_span_str(&span_str)
 }
 
 #[allow(dead_code)]

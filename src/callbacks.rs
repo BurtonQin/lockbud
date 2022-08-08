@@ -73,8 +73,8 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             .unwrap()
             .peek_mut()
             .enter(|tcx| {
-                self.analyze_with_lockbud(compiler, tcx);
-                cs::analyze(tcx).unwrap();
+                let reports = self.analyze_with_lockbud(compiler, tcx);
+                cs::analyze(tcx, reports).unwrap();
         });
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
@@ -87,18 +87,18 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
 }
 
 impl LockBudCallbacks {
-    fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
+    fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) -> Option<Vec<Report>> {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
         match &self.options.crate_name_list {
             CrateNameList::White(crates) if !crates.is_empty() && !crates.contains(&crate_name) => {
-                return
+                return None
             }
-            CrateNameList::Black(crates) if crates.contains(&crate_name) => return,
+            CrateNameList::Black(crates) if crates.contains(&crate_name) => return None,
             _ => {}
         };
         if tcx.sess.opts.debugging_opts.no_codegen || !tcx.sess.opts.output_types.should_codegen() {
-            return;
+            return None;
         }
         let cgus = tcx.collect_and_partition_mono_items(()).1;
         let instances: Vec<Instance<'tcx>> = cgus
@@ -124,9 +124,12 @@ impl LockBudCallbacks {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
                     report_stats(&crate_name, &reports);
+                    return Some(reports)
                 }
             }
         }
+
+        None
     }
 }
 
