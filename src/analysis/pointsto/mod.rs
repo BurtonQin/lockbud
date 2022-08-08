@@ -20,7 +20,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph};
 
-use crate::analysis::callgraph::{CallGraph, InstanceId};
+use crate::analysis::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::interest::concurrency::lock::LockGuardId;
 
 /// Field-sensitive intra-procedural Andersen pointer analysis.
@@ -555,8 +555,14 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
             local: local2,
         } = aid2;
 
-        let instance1 = self.callgraph.index_to_instance(id1);
-        let instance2 = self.callgraph.index_to_instance(id2);
+        let instance1 = self
+            .callgraph
+            .index_to_instance(id1)
+            .map(CallGraphNode::instance);
+        let instance2 = self
+            .callgraph
+            .index_to_instance(id2)
+            .map(CallGraphNode::instance);
 
         match (instance1, instance2) {
             (Some(instance1), Some(instance2)) => {

@@ -6,7 +6,7 @@ mod report;
 pub use report::Report;
 use report::{DeadlockDiagnosis, ReportContent};
 
-use crate::analysis::callgraph::{CallGraph, CallSiteLocation, InstanceId};
+use crate::analysis::callgraph::{CallGraph, CallGraphNode, CallSiteLocation, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, ApproximateAliasKind};
 use crate::interest::concurrency::lock::{
     DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap,
@@ -73,8 +73,12 @@ impl<'tcx> DeadlockDetector<'tcx> {
         callgraph: &CallGraph<'tcx>,
     ) -> FxHashMap<InstanceId, LockGuardMap<'tcx>> {
         let mut lockguards = FxHashMap::default();
-        for (instance_id, instance) in callgraph.graph.node_references() {
-            // Only analyze local fn
+        for (instance_id, node) in callgraph.graph.node_references() {
+            let instance = match node {
+                CallGraphNode::WithBody(instance) => instance,
+                _ => continue,
+            };
+            // Only analyze local fn with body
             if !instance.def_id().is_local() {
                 continue;
             }
@@ -90,7 +94,11 @@ impl<'tcx> DeadlockDetector<'tcx> {
     }
 
     /// Detect deadlock inter-procedurally and returns bug report.
-    pub fn detect(&mut self, callgraph: &CallGraph<'tcx>) -> Vec<Report> {
+    pub fn detect<'a>(
+        &mut self,
+        callgraph: &'a CallGraph<'tcx>,
+        alias_analysis: &mut AliasAnalysis<'a, 'tcx>,
+    ) -> Vec<Report> {
         let lockguards = self.collect_lockguards(callgraph);
         let mut worklist = VecDeque::new();
         for (id, _) in callgraph.graph.node_references() {
@@ -105,7 +113,10 @@ impl<'tcx> DeadlockDetector<'tcx> {
         // The fixed-point algorithm
         while let Some(id) = worklist.pop_front() {
             if let Some(lockguard_info) = lockguards.get(&id) {
-                let instance = callgraph.index_to_instance(id).unwrap();
+                let instance = match callgraph.index_to_instance(id).unwrap() {
+                    CallGraphNode::WithBody(instance) => instance,
+                    _ => continue,
+                };
                 let body = self.tcx.instance_mir(instance.def);
                 let context = contexts[&id].clone();
                 let states = self.intraproc_gen_kill(body, &context, lockguard_info);
@@ -141,11 +152,11 @@ impl<'tcx> DeadlockDetector<'tcx> {
         for (_, map) in lockguards.into_iter() {
             info.extend(map.into_iter());
         }
-        self.detect_deadlock(&info, callgraph)
+        self.detect_deadlock(&info, callgraph, alias_analysis)
     }
 
     /// Collect gen/kill info for related locations.
-    fn location_to_live_lockguards(
+    fn gen_kill_locations(
         lockguard_map: &LockGuardMap<'tcx>,
     ) -> (
         FxHashMap<Location, LiveLockGuards>,
@@ -194,7 +205,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
         context: &LiveLockGuards,
         lockguard_info: &LockGuardMap<'tcx>,
     ) -> FxHashMap<Location, LiveLockGuards> {
-        let (gen_map, kill_map) = Self::location_to_live_lockguards(lockguard_info);
+        let (gen_map, kill_map) = Self::gen_kill_locations(lockguard_info);
         let mut worklist: VecDeque<Location> = Default::default();
         for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
             for stmt_idx in 0..bb_data.statements.len() + 1 {
@@ -245,19 +256,19 @@ impl<'tcx> DeadlockDetector<'tcx> {
     /// First detect doublelock on each relation(a, b),
     /// use non-doublelock relations to build `ConflictLockGraph`.
     /// Then find the cycles in `ConflictLockGraph` as conflictlock.
-    fn detect_deadlock(
+    fn detect_deadlock<'a>(
         &self,
         lockguards: &LockGuardMap<'tcx>,
-        callgraph: &CallGraph<'tcx>,
+        callgraph: &'a CallGraph<'tcx>,
+        alias_analysis: &mut AliasAnalysis<'a, 'tcx>,
     ) -> Vec<Report> {
         let mut reports = Vec::new();
         let mut conflictlock_graph = ConflictLockGraph::new();
         let mut relation_to_nodes = FxHashMap::default();
-        let mut alias_analysis = AliasAnalysis::new(self.tcx, callgraph);
         // Detect doublelock:
         // forall relation(a, b): deadlock(a, b) => doublelock(a, b)
         for (a, b) in &self.lockguard_relations {
-            let possibility = deadlock_possibility(a, b, lockguards, &mut alias_analysis);
+            let possibility = deadlock_possibility(a, b, lockguards, alias_analysis);
             match possibility {
                 DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {
                     let diagnosis = diagnose_doublelock(a, b, lockguards, callgraph, self.tcx);
@@ -288,7 +299,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
         // if exists a cycle, i.e., edge(r1, r2), edge(r2, r3), ..., edge(rn, r1) then conflictlock((r1, r2, r3, ..., rn))
         for ((_, a), node1) in relation_to_nodes.iter() {
             for ((b, _), node2) in relation_to_nodes.iter() {
-                let possibility = deadlock_possibility(a, b, lockguards, &mut alias_analysis);
+                let possibility = deadlock_possibility(a, b, lockguards, alias_analysis);
                 match possibility {
                     DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {
                         conflictlock_graph.add_edge(*node1, *node2, possibility);
@@ -374,7 +385,10 @@ fn track_callchains<'tcx>(
             vec.windows(2)
                 .map(|window| {
                     let (caller, callee) = (window[0], window[1]);
-                    let caller_instance = callgraph.index_to_instance(caller).unwrap();
+                    let caller_instance = match callgraph.index_to_instance(caller).unwrap() {
+                        CallGraphNode::WithBody(instance) => instance,
+                        n => panic!("CallGraphNode {:?} must own body", n),
+                    };
                     let caller_body = tcx.instance_mir(caller_instance.def);
                     let callsites = callgraph.callsites(caller, callee).unwrap();
                     callsites

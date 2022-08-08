@@ -5,6 +5,7 @@ extern crate rustc_hir;
 
 use std::path::PathBuf;
 
+use crate::analysis::pointsto::AliasAnalysis;
 use crate::options::{CrateNameList, DetectorKind, Options};
 use log::{debug, warn};
 use rustc_driver::Compilation;
@@ -112,10 +113,11 @@ impl LockBudCallbacks {
         let mut callgraph = CallGraph::new();
         let param_env = ParamEnv::reveal_all();
         callgraph.analyze(instances.clone(), tcx, param_env);
+        let mut alias_analysis = AliasAnalysis::new(tcx, &callgraph);
         match self.options.detector_kind {
             DetectorKind::Deadlock => {
                 let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
-                let reports = deadlock_detector.detect(&callgraph);
+                let reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);

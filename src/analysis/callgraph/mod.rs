@@ -26,13 +26,38 @@ pub enum CallSiteLocation {
     // FnPtr(Location),
 }
 
+/// The CallGraph node wrapping an Instance.
+/// WithBody means the Instance owns body.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CallGraphNode<'tcx> {
+    WithBody(Instance<'tcx>),
+    WithoutBody(Instance<'tcx>),
+}
+
+impl<'tcx> CallGraphNode<'tcx> {
+    pub fn instance(&self) -> &Instance<'tcx> {
+        match self {
+            CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) => inst,
+        }
+    }
+
+    pub fn match_instance(&self, other: &Instance<'tcx>) -> bool {
+        match self {
+            CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) if inst == other => {
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// CallGraph
 /// The nodes of CallGraph are instances.
 /// The directed edges are CallSite Locations.
 /// e.g., `Instance1--|[CallSite1, CallSite2]|-->Instance2`
 /// denotes `Instance1` calls `Instance2` at locations `Callsite1` and `CallSite2`.
 pub struct CallGraph<'tcx> {
-    pub graph: Graph<Instance<'tcx>, Vec<CallSiteLocation>, Directed>,
+    pub graph: Graph<CallGraphNode<'tcx>, Vec<CallSiteLocation>, Directed>,
 }
 
 impl<'tcx> CallGraph<'tcx> {
@@ -47,12 +72,12 @@ impl<'tcx> CallGraph<'tcx> {
     pub fn instance_to_index(&self, instance: &Instance<'tcx>) -> Option<InstanceId> {
         self.graph
             .node_references()
-            .find(|(_idx, inst)| *inst == instance)
+            .find(|(_idx, inst)| inst.match_instance(instance))
             .map(|(idx, _)| idx)
     }
 
     /// Get the instance by InstanceId.
-    pub fn index_to_instance(&self, idx: InstanceId) -> Option<&Instance<'tcx>> {
+    pub fn index_to_instance(&self, idx: InstanceId) -> Option<&CallGraphNode<'tcx>> {
         self.graph.node_weight(idx)
     }
 
@@ -67,7 +92,7 @@ impl<'tcx> CallGraph<'tcx> {
         let idx_insts = instances
             .into_iter()
             .map(|inst| {
-                let idx = self.graph.add_node(inst);
+                let idx = self.graph.add_node(CallGraphNode::WithBody(inst));
                 (idx, inst)
             })
             .collect::<Vec<_>>();
@@ -83,7 +108,7 @@ impl<'tcx> CallGraph<'tcx> {
                 let callee_idx = if let Some(callee_idx) = self.instance_to_index(&callee) {
                     callee_idx
                 } else {
-                    continue;
+                    self.graph.add_node(CallGraphNode::WithoutBody(callee))
                 };
                 if let Some(edge_idx) = self.graph.find_edge(caller_idx, callee_idx) {
                     // Update edge weight.
