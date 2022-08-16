@@ -6,7 +6,7 @@ mod report;
 pub use report::Report;
 use report::{DeadlockDiagnosis, ReportContent};
 
-use crate::analysis::callgraph::{CallGraph, CallGraphNode, CallSiteLocation, InstanceId};
+use crate::analysis::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, ApproximateAliasKind};
 use crate::interest::concurrency::lock::{
     DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap,
@@ -124,8 +124,11 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     let callee = edge.target();
                     let callsite = edge.weight();
                     for callsite_loc in callsite {
-                        let CallSiteLocation::FnDef(loc) = callsite_loc;
-                        let callsite_state = states[loc].clone();
+                        let loc = match callsite_loc.location() {
+                            Some(loc) => loc,
+                            None => continue,
+                        };
+                        let callsite_state = states[&loc].clone();
                         let changed = contexts
                             .get_mut(&callee)
                             .unwrap()
@@ -393,9 +396,8 @@ fn track_callchains<'tcx>(
                     let callsites = callgraph.callsites(caller, callee).unwrap();
                     callsites
                         .into_iter()
-                        .map(|location| {
-                            let CallSiteLocation::FnDef(location) = location;
-                            format!("{:?}", caller_body.source_info(location).span)
+                        .filter_map(|location| {
+                            Some(format!("{:?}", caller_body.source_info(location.location()?).span))
                         })
                         .collect::<Vec<_>>()
                 })

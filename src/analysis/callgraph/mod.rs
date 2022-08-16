@@ -4,26 +4,41 @@
 //! from caller to callee with callsite locations as edge weight.
 //! This is a fundamental analysis for other analysis,
 //! e.g., points-to analysis, lockguard collector, etc.
+//! We also track where a closure is defined rather than called
+//! to record the defined function and the parameter of the closure,
+//! which is pointed to by upvars.
 use petgraph::algo;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::IntoNodeReferences;
+use petgraph::Direction::Incoming;
 use petgraph::{Directed, Graph};
 
 use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
+use rustc_middle::mir::{Body, Local, LocalDecl, LocalKind, Location, Terminator, TerminatorKind};
+use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt, TyKind};
 
 /// The NodeIndex in CallGraph, denoting a unique instance in CallGraph.
 pub type InstanceId = NodeIndex;
 
 /// The location where caller calls callee.
 /// Support direct call for now, where callee resolves to FnDef.
+/// Also support tracking the parameter of a closure (pointed to by upvars)
 /// TODO(boqin): Add support for FnPtr.
 #[derive(Copy, Clone, Debug)]
 pub enum CallSiteLocation {
-    FnDef(Location),
-    // FnPtr(Location),
+    Direct(Location),
+    ClosureDef(Local),
+    // Indirect(Location),
+}
+
+impl CallSiteLocation {
+    pub fn location(&self) -> Option<Location> {
+        match self {
+            Self::Direct(loc) => Some(*loc),
+            _ => None,
+        }
+    }
 }
 
 /// The CallGraph node wrapping an Instance.
@@ -131,6 +146,11 @@ impl<'tcx> CallGraph<'tcx> {
         self.graph.edge_weight(edge).cloned()
     }
 
+    /// Find all the callers that call target
+    pub fn callers(&self, target: InstanceId) -> Vec<InstanceId> {
+        self.graph.neighbors_directed(target, Incoming).collect()
+    }
+
     /// Find all simple paths from source to target.
     /// e.g., for one of the paths, `source --> instance1 --> instance2 --> target`,
     /// the return is [source, instance1, instance2, target].
@@ -198,9 +218,41 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                     .flatten()
                 {
                     self.callsites
-                        .push((callee, CallSiteLocation::FnDef(location)));
+                        .push((callee, CallSiteLocation::Direct(location)));
                 }
             }
         }
+        self.super_terminator(terminator, location);
+    }
+
+    /// Find where the closure is defined rather than called,
+    /// including the closure instance and the arg.
+    ///
+    /// e.g., let mut _20: [closure@src/main.rs:13:28: 16:6];
+    ///
+    /// _20 is of type Closure, but it is actually the arg that captures
+    /// the variables in the defining function.
+    fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
+        let func_ty = self.caller.subst_mir_and_normalize_erasing_regions(
+            self.tcx,
+            self.param_env,
+            local_decl.ty,
+        );
+        if let TyKind::Closure(def_id, substs) = func_ty.kind() {
+            match self.body.local_kind(local) {
+                LocalKind::Arg | LocalKind::ReturnPointer => {}
+                _ => {
+                    if let Some(callee_instance) =
+                        Instance::resolve(self.tcx, self.param_env, *def_id, substs)
+                            .ok()
+                            .flatten()
+                    {
+                        self.callsites
+                            .push((callee_instance, CallSiteLocation::ClosureDef(local)));
+                    }
+                }
+            }
+        }
+        self.super_local_decl(local, local_decl);
     }
 }
