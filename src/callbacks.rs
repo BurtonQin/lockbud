@@ -121,14 +121,15 @@ impl LockBudCallbacks {
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
-                    report_stats(&crate_name, &reports);
+                    let stats = report_stats(&crate_name, &reports);
+                    warn!("{}", stats);
                 }
             }
         }
     }
 }
 
-fn report_stats(crate_name: &str, reports: &[Report]) {
+fn report_stats(crate_name: &str, reports: &[Report]) -> String {
     let (
         mut doublelock_probably,
         mut doublelock_possibly,
@@ -149,5 +150,15 @@ fn report_stats(crate_name: &str, reports: &[Report]) {
             },
         }
     }
-    warn!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly);
+    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_report_stats() {
+        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0));
+    }
 }

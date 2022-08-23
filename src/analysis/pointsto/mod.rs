@@ -444,10 +444,8 @@ impl<'tcx> ConstraintGraphCollector<'tcx> {
                             if &p1.projection[..p2.projection.len()] == p2.projection {
                                 self.graph.add_copy(*p2, *p1);
                             }
-                        } else {
-                            if &p2.projection[..p1.projection.len()] == p1.projection {
-                                self.graph.add_copy(*p1, *p2);
-                            }
+                        } else if &p2.projection[..p1.projection.len()] == p1.projection {
+                            self.graph.add_copy(*p1, *p2);
                         }
                     }
                 }
