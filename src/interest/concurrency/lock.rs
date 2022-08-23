@@ -3,6 +3,7 @@ extern crate rustc_hash;
 extern crate rustc_span;
 
 use smallvec::SmallVec;
+use std::cmp::Ordering;
 
 use rustc_hash::FxHashMap;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
@@ -26,12 +27,30 @@ impl LockGuardId {
 }
 
 /// The possibility of deadlock.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeadlockPossibility {
     Probably,
     Possibly,
     Unlikely,
     Unknown,
+}
+
+impl PartialOrd for DeadlockPossibility {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        use DeadlockPossibility::*;
+        match (*self, *other) {
+            (Probably, Probably)
+            | (Possibly, Possibly)
+            | (Unlikely, Unlikely)
+            | (Unknown, Unknown) => Some(Ordering::Equal),
+            (Probably, _) | (Possibly, Unlikely) | (Possibly, Unknown) | (Unlikely, Unknown) => {
+                Some(Ordering::Greater)
+            }
+            (_, Probably) | (Unlikely, Possibly) | (Unknown, Possibly) | (Unknown, Unlikely) => {
+                Some(Ordering::Less)
+            }
+        }
+    }
 }
 
 /// LockGuardKind, DataTy

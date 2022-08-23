@@ -135,7 +135,11 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
         mut doublelock_possibly,
         mut conflictlock_probably,
         mut conflictlock_possibly,
-    ) = (0, 0, 0, 0);
+        mut condvar_missing_lock_probably,
+        mut condvar_missing_lock_possibly,
+        mut condvar_deadlock_probably,
+        mut condvar_deadlock_possibly,
+    ) = (0, 0, 0, 0, 0, 0, 0, 0);
     for report in reports {
         match report {
             Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
@@ -148,6 +152,20 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
                 "Possibly" => conflictlock_possibly += 1,
                 _ => {}
             },
+            Report::CondvarMissingLock(condvar_missing_lock) => {
+                match condvar_missing_lock.possibility.as_str() {
+                    "Probably" => condvar_missing_lock_probably += 1,
+                    "Possibly" => condvar_missing_lock_possibly += 1,
+                    _ => {}
+                }
+            }
+            Report::CondvarDeadlock(condvar_deadlock) => {
+                match condvar_deadlock.possibility.as_str() {
+                    "Probably" => condvar_deadlock_probably += 1,
+                    "Possibly" => condvar_deadlock_possibly += 1,
+                    _ => {}
+                }
+            }
         }
     }
     format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly)
