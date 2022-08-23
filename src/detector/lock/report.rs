@@ -136,3 +136,48 @@ pub enum Report {
     CondvarDeadlock(ReportContent<CondvarDeadlockDiagnosis>),
     CondvarMissingLock(ReportContent<CondvarMissingLockDiagnosis>),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deadlock_diagnosis() {
+        let d = DeadlockDiagnosis::new(
+            "ParkingLotRead(loader::ModuleCache)".to_owned(),
+            "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)".to_owned(),
+            "ParkingLotRead(loader::ModuleCache)".to_owned(),
+            "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)".to_owned(),
+            vec![vec![vec![
+                "language/move-vm/runtime/src/loader.rs:518:13: 518:55 (#0)".to_owned(),
+            ]]],
+        );
+        assert_eq!(
+            format!("{:?}", d),
+            r#"DeadlockDiagnosis { first_lock_type: "ParkingLotRead(loader::ModuleCache)", first_lock_span: "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)", second_lock_type: "ParkingLotRead(loader::ModuleCache)", second_lock_span: "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)", callchains: [[["language/move-vm/runtime/src/loader.rs:518:13: 518:55 (#0)"]]] }"#
+        )
+    }
+
+    #[test]
+    fn test_report_content() {
+        let d = DeadlockDiagnosis::new(
+            "ParkingLotRead(loader::ModuleCache)".to_owned(),
+            "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)".to_owned(),
+            "ParkingLotRead(loader::ModuleCache)".to_owned(),
+            "language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)".to_owned(),
+            vec![vec![vec![
+                "language/move-vm/runtime/src/loader.rs:518:13: 518:55 (#0)".to_owned(),
+            ]]],
+        );
+        let report_content = ReportContent::new(
+            "DoubleLock".to_owned(),
+            "Possibly".to_owned(),
+            format!("{:?}", d),
+            "The first lock is not released when acquiring the second lock".to_owned(),
+        );
+        assert_eq!(
+            format!("{:?}", report_content),
+            r#"ReportContent { bug_kind: "DoubleLock", possibility: "Possibly", diagnosis: "DeadlockDiagnosis { first_lock_type: \"ParkingLotRead(loader::ModuleCache)\", first_lock_span: \"language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)\", second_lock_type: \"ParkingLotRead(loader::ModuleCache)\", second_lock_span: \"language/move-vm/runtime/src/loader.rs:510:13: 510:18 (#0)\", callchains: [[[\"language/move-vm/runtime/src/loader.rs:518:13: 518:55 (#0)\"]]] }", explanation: "The first lock is not released when acquiring the second lock" }"#
+        );
+    }
+}
