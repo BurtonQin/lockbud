@@ -8,7 +8,6 @@ use report::{DeadlockDiagnosis, ReportContent};
 
 use crate::analysis::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, AliasId, ApproximateAliasKind};
-use crate::detector::lock::report::CondvarMissingLockDiagnosis;
 use crate::interest::concurrency::condvar::{CondvarApi, ParkingLotCondvarApi, StdCondvarApi};
 use crate::interest::concurrency::lock::{
     DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap,
@@ -368,34 +367,12 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                     })
                                     .collect::<Vec<_>>();
                                 // exists (g1, g2) in aliased_pairs: alias(g2, mutex_guard1)
-                                let mut missing_lock_before_condvar = true;
                                 // LockGuard pairs that do not alias with MutexGuard in `wait`
                                 let mut no_mutex_guards = Vec::new();
                                 for (g1, g2) in aliased_pairs.iter() {
-                                    if AliasId::from(*g1) == *mutex_guard1 {
-                                        // Found an aliased pair where the first LockGuard equals to the MutexGuard in `wait`,
-                                        // thus there is no missing lock before notify.
-                                        missing_lock_before_condvar = false;
-                                    } else {
+                                    if AliasId::from(*g1) != *mutex_guard1 {
                                         no_mutex_guards.push((g1, g2));
                                     }
-                                }
-                                if missing_lock_before_condvar {
-                                    let diagnosis = diagnose_condvar_missing_lock(
-                                        *caller_id1,
-                                        *loc1,
-                                        *caller_id2,
-                                        *loc2,
-                                        true,
-                                        callgraph,
-                                        self.tcx,
-                                    );
-                                    let content = ReportContent::new("Missing lock before Condvar::notify".to_owned(), 
-                                    "Possibly".to_owned(),
-                                    diagnosis,
-                            "Check if Condvar::notify is dominated by the same Lock before Condvar::wait".to_owned());
-                                    let report = Report::CondvarMissingLock(content);
-                                    reports.push(report);
                                 }
                                 if !no_mutex_guards.is_empty() {
                                     let diagnosis = diagnose_condvar_deadlock(
@@ -417,23 +394,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                     reports.push(report);
                                 }
                             }
-                            (Some(_), None) => {
-                                let diagnosis = diagnose_condvar_missing_lock(
-                                    *caller_id1,
-                                    *loc1,
-                                    *caller_id2,
-                                    *loc2,
-                                    true,
-                                    callgraph,
-                                    self.tcx,
-                                );
-                                let content = ReportContent::new("Missing lock before Condvar::notify".to_owned(), 
-                                    "Possibly".to_owned(),
-                                    diagnosis,
-                            "Check if Condvar::notify is dominated by the same Lock before Condvar::wait".to_owned());
-                                let report = Report::CondvarMissingLock(content);
-                                reports.push(report);
-                            }
+                            (Some(_), None) => {}
                             _ => {
                                 // There must be a MutexGuard before `wait`.
                                 unreachable!()
@@ -480,38 +441,16 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                     })
                                     .collect::<Vec<_>>();
                                 // exists (g1, g2) in aliased_pairs: alias(g2, mutex_guard1)
-                                let mut missing_lock_before_condvar = true;
                                 // LockGuard pairs that do not alias with MutexGuard in `wait`
                                 let mut no_mutex_guards = Vec::new();
                                 for (g1, g2) in aliased_pairs.iter() {
-                                    if matches!(
+                                    if !matches!(
                                         alias_analysis.points_to(*mutex_guard1, AliasId::from(*g1)),
                                         ApproximateAliasKind::Possibly
                                             | ApproximateAliasKind::Probably
                                     ) {
-                                        // Found an aliased pair where the first LockGuard points to the &mut MutexGuard in `wait`,
-                                        // thus there is no missing lock before notify.
-                                        missing_lock_before_condvar = false;
-                                    } else {
                                         no_mutex_guards.push((g1, g2));
                                     }
-                                }
-                                if missing_lock_before_condvar {
-                                    let diagnosis = diagnose_condvar_missing_lock(
-                                        *caller_id1,
-                                        *loc1,
-                                        *caller_id2,
-                                        *loc2,
-                                        false,
-                                        callgraph,
-                                        self.tcx,
-                                    );
-                                    let content = ReportContent::new("Missing lock before Condvar::notify".to_owned(), 
-                                    "Possibly".to_owned(),
-                                    diagnosis,
-                            "Check if Condvar::notify is dominated by the same Lock before Condvar::wait".to_owned());
-                                    let report = Report::CondvarMissingLock(content);
-                                    reports.push(report);
                                 }
                                 if !no_mutex_guards.is_empty() {
                                     let diagnosis = diagnose_condvar_deadlock(
@@ -533,23 +472,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                     reports.push(report);
                                 }
                             }
-                            (Some(_), None) => {
-                                let diagnosis = diagnose_condvar_missing_lock(
-                                    *caller_id1,
-                                    *loc1,
-                                    *caller_id2,
-                                    *loc2,
-                                    false,
-                                    callgraph,
-                                    self.tcx,
-                                );
-                                let content = ReportContent::new("Missing lock before Condvar::notify".to_owned(), 
-                                    "Possibly".to_owned(),
-                                    diagnosis,
-                            "Check if Condvar::notify is dominated by the same Lock before Condvar::wait".to_owned());
-                                let report = Report::CondvarMissingLock(content);
-                                reports.push(report);
-                            }
+                            (Some(_), None) => {}
                             _ => {
                                 // There must be a MutexGuard before `wait`.
                                 unreachable!()
@@ -839,48 +762,6 @@ fn diagnose_one_relation<'tcx>(
         second_lock.1,
         callchains,
     )
-}
-
-fn diagnose_condvar_missing_lock<'tcx>(
-    caller_id1: InstanceId,
-    loc1: Location,
-    caller_id2: InstanceId,
-    loc2: Location,
-    is_std_condvar: bool,
-    callgraph: &CallGraph<'tcx>,
-    tcx: TyCtxt<'tcx>,
-) -> CondvarMissingLockDiagnosis {
-    let caller_body1 = tcx.instance_mir(
-        callgraph
-            .index_to_instance(caller_id1)
-            .unwrap()
-            .instance()
-            .def,
-    );
-    let caller_body2 = tcx.instance_mir(
-        callgraph
-            .index_to_instance(caller_id2)
-            .unwrap()
-            .instance()
-            .def,
-    );
-    let wait_span = format!("{:?}", caller_body1.source_info(loc1).span);
-    let notify_span = format!("{:?}", caller_body2.source_info(loc2).span);
-    if is_std_condvar {
-        CondvarMissingLockDiagnosis::new(
-            "std::sync::Condvar::wait".to_owned(),
-            wait_span,
-            "std::sync::Condvar::notify".to_owned(),
-            notify_span,
-        )
-    } else {
-        CondvarMissingLockDiagnosis::new(
-            "parking_lot::Condvar::wait".to_owned(),
-            wait_span,
-            "parking_lot::Condvar::notify".to_owned(),
-            notify_span,
-        )
-    }
 }
 
 fn diagnose_condvar_deadlock<'tcx>(

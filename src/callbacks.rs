@@ -135,11 +135,9 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
         mut doublelock_possibly,
         mut conflictlock_probably,
         mut conflictlock_possibly,
-        mut condvar_missing_lock_probably,
-        mut condvar_missing_lock_possibly,
         mut condvar_deadlock_probably,
         mut condvar_deadlock_possibly,
-    ) = (0, 0, 0, 0, 0, 0, 0, 0);
+    ) = (0, 0, 0, 0, 0, 0);
     for report in reports {
         match report {
             Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
@@ -152,13 +150,6 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
                 "Possibly" => conflictlock_possibly += 1,
                 _ => {}
             },
-            Report::CondvarMissingLock(condvar_missing_lock) => {
-                match condvar_missing_lock.possibility.as_str() {
-                    "Probably" => condvar_missing_lock_probably += 1,
-                    "Possibly" => condvar_missing_lock_possibly += 1,
-                    _ => {}
-                }
-            }
             Report::CondvarDeadlock(condvar_deadlock) => {
                 match condvar_deadlock.possibility.as_str() {
                     "Probably" => condvar_deadlock_probably += 1,
@@ -168,7 +159,7 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
             }
         }
     }
-    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly)
+    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly)
 }
 
 #[cfg(test)]
@@ -177,6 +168,6 @@ mod tests {
 
     #[test]
     fn test_report_stats() {
-        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0));
+        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0));
     }
 }

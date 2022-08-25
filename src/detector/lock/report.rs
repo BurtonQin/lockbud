@@ -35,30 +35,6 @@ impl DeadlockDiagnosis {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CondvarMissingLockDiagnosis {
-    pub condvar_wait_type: String,
-    pub condvar_wait_callsite_span: String,
-    pub condvar_notify_type: String,
-    pub condvar_notify_callsite_span: String,
-}
-
-impl CondvarMissingLockDiagnosis {
-    pub fn new(
-        condvar_wait_type: String,
-        condvar_wait_callsite_span: String,
-        condvar_notify_type: String,
-        condvar_notify_callsite_span: String,
-    ) -> Self {
-        Self {
-            condvar_wait_type,
-            condvar_wait_callsite_span,
-            condvar_notify_type,
-            condvar_notify_callsite_span,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
 pub struct WaitNotifyLocks {
     pub wait_lock_type: String,
     pub wait_lock_span: String,
@@ -134,7 +110,6 @@ pub enum Report {
     DoubleLock(ReportContent<DeadlockDiagnosis>),
     ConflictLock(ReportContent<Vec<DeadlockDiagnosis>>),
     CondvarDeadlock(ReportContent<CondvarDeadlockDiagnosis>),
-    CondvarMissingLock(ReportContent<CondvarMissingLockDiagnosis>),
 }
 
 #[cfg(test)]
