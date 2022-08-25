@@ -172,4 +172,4 @@ Bugs detected and fixed (one PR may fix multiple bugs):
 16. https://github.com/apache/incubator-teaclave-sgx-sdk/pull/269
 
 ## License
-The lockbud Project is dual-licensed under Apache 2.0 and MIT terms.
+The lockbud Project is dual-licensed under BSD-3.
