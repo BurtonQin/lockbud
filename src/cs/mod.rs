@@ -8,9 +8,9 @@ use rustc_middle::{ty::{TyCtxt, Ty, InstanceDef}, mir::{Body, Local, Location}};
 use serde::{Serialize, Deserialize};
 
 
-use crate::{detector::lock::Report, cs::range::parse_span_str};
+use crate::{detector::lock::Report, cs::{range::parse_span_str, diagnostics::AnalysisResult, cli::BeautifiedCallInCriticalSection}};
 
-use self::{ty::{Lifetimes, Lifetime}, lifetime::analyze_lifetimes, lock::parse_lockguard_type, call_graph::CallSite, range::parse_span};
+use self::{ty::{Lifetimes, Lifetime}, lifetime::analyze_lifetimes, lock::parse_lockguard_type, call_graph::CallSite, range::parse_span, diagnostics::{Suspicious, SuspiciousCall, HighlightArea}};
 
 
 mod ty;
@@ -18,58 +18,14 @@ mod lifetime;
 mod lock;
 mod call_graph;
 mod range;
+mod diagnostics;
+mod cli;
+
 
 use self::call_graph::analyze_callgraph;
 
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Serialize, Deserialize, Debug)]
-pub enum CriticalSectionCall {
-    ChSend,
-    ChRecv,
-    CondVarWait,
 
-    // FIXME: These are not critical section calls, just temporary place here
-    DoubleLock,
-    ConflictLock
-}
-
-impl Display for CriticalSectionCall {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CriticalSectionCall::ChSend => write!(f, "{}", "channel send"),
-            CriticalSectionCall::ChRecv => write!(f, "{}", "channel recv"),
-            CriticalSectionCall::CondVarWait =>  write!(f, "{}", "conditional variable wait"),
-            CriticalSectionCall::DoubleLock =>  write!(f, "{}", "double lock"),
-            CriticalSectionCall::ConflictLock =>  write!(f, "{}", "conflict lock"),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HighlightArea {
-    // filename, start line & col, end line & col
-    pub ranges: Vec<(String, u32, u32, u32, u32)>
-}
-
-#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
-pub struct CallInCriticalSection {
-    // filename, start line & col, end line & col
-    pub callchains: Vec<(String, u32, u32, u32, u32)>,
-    pub ty: CriticalSectionCall,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BeautifiedCallInCriticalSection {
-    // filename, start line & col, end line & col
-    pub callchains: Vec<String>,
-    pub ty: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AnalysisResult {
-    pub calls: HashSet<CallInCriticalSection>,
-    pub critical_sections: Vec<HighlightArea>
-}
 
 fn callchains_to_spans<'tcx>(callchains:& Vec<CallSite<'tcx>>) -> Vec<(String, u32, u32, u32, u32)> {
     callchains.iter()
@@ -99,9 +55,9 @@ pub fn filter_body_locals(body: &Body, filter: fn(Ty) -> bool) -> Vec<Local> {
 }
 
 type CSCallFilter<'tcx> = dyn Fn(TyCtxt<'tcx>, &CallSite) -> bool;
-type CSCallFilterSet<'tcx> = HashMap<CriticalSectionCall, &'tcx CSCallFilter<'tcx>>;
+type CSCallFilterSet<'tcx> = HashMap<Suspicious, &'tcx CSCallFilter<'tcx>>;
 
-pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&Lifetime, callgraph: &call_graph::CallGraph<'tcx>, cs_calls:& mut HashSet<CallInCriticalSection>, callchains:Vec<CallSite<'tcx>>, filter_set:&CSCallFilterSet<'tcx>) {
+pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&Lifetime, callgraph: &call_graph::CallGraph<'tcx>, cs_calls:& mut HashSet<SuspiciousCall>, callchains:Vec<CallSite<'tcx>>, filter_set:&CSCallFilterSet<'tcx>) {
     if callchains.len() > 20 {
         // eprintln!("find_in_lifetime callchain too long, skip");
         return;
@@ -163,7 +119,7 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
             }
         }
 
-        let mut cs_call_type: Option<CriticalSectionCall> = None;
+        let mut cs_call_type: Option<Suspicious> = None;
         for (t, f) in filter_set {
             if f(tcx, cs) {
                 cs_call_type = Some(*t);
@@ -180,7 +136,7 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
                 new_cc.push(cs.clone());
                 if cs_call_type != None {
                     // if this call is in critical section and is our interests
-                    cs_calls.insert(CallInCriticalSection{
+                    cs_calls.insert(SuspiciousCall{
                         callchains: callchains_to_spans(&new_cc),
                         ty:cs_call_type.unwrap(),
                     });
@@ -201,7 +157,7 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
             new_cc.push(cs.clone());
             if cs_call_type != None {
                 // if this call is in critical section and is our interests
-                cs_calls.insert(CallInCriticalSection{
+                cs_calls.insert(SuspiciousCall{
                     callchains: callchains_to_spans(&new_cc),
                     ty: cs_call_type.unwrap(),
                 });
@@ -220,6 +176,16 @@ pub fn find_in_lifetime<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&L
 
 fn lifetime_to_highlight_area(l: &Lifetime) -> HighlightArea {
     HighlightArea {
+        triggers: l.init_at.iter()
+        .filter_map(|c| {
+            if let Some((filename, rg)) = parse_span(&c) {
+                Some((filename, rg.0.0, rg.0.1, rg.1.0, rg.1.1))
+            } else {
+                None
+            }
+             
+        })
+        .collect(),
         ranges:l.live_span.iter()
         .filter_map(|c| {
             if let Some((filename, rg)) = parse_span(&c) {
@@ -233,7 +199,7 @@ fn lifetime_to_highlight_area(l: &Lifetime) -> HighlightArea {
     }
 }
 
-pub fn check_cond_var_waits<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&Lifetime, callgraph: &call_graph::CallGraph<'tcx>, cs_calls:& mut HashSet<CallInCriticalSection>, callchains:Vec<CallSite<'tcx>>, loc_to_locals: &HashMap<Location, HashSet<Local>>) {
+pub fn check_cond_var_waits<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, lt:&Lifetime, callgraph: &call_graph::CallGraph<'tcx>, cs_calls:& mut HashSet<SuspiciousCall>, callchains:Vec<CallSite<'tcx>>, loc_to_locals: &HashMap<Location, HashSet<Local>>) {
 
     if callchains.len() > 10 {
         debug!("find_in_lifetime callchain too long, skip");
@@ -311,9 +277,9 @@ pub fn check_cond_var_waits<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, l
                 if is_cond_wait && num_of_guards > 2 {
 
                     // if this call is in critical section and is our interests
-                    cs_calls.insert(CallInCriticalSection{
+                    cs_calls.insert(SuspiciousCall  {
                         callchains: callchains_to_spans(&new_cc),
-                        ty:CriticalSectionCall::CondVarWait,
+                        ty:Suspicious::CondVarWait,
                     });
                     break
                 } 
@@ -332,9 +298,9 @@ pub fn check_cond_var_waits<'tcx, 'a>(tcx: TyCtxt<'tcx>, body: &'a Body<'tcx>, l
             new_cc.push(cs.clone());
             if is_cond_wait {
                 // if this call is in critical section and is our interests
-                cs_calls.insert(CallInCriticalSection{
+                cs_calls.insert(SuspiciousCall {
                     callchains: callchains_to_spans(&new_cc),
-                    ty: CriticalSectionCall::CondVarWait,
+                    ty: Suspicious::CondVarWait,
                 });
             } else {
                 // if this call is in critical section and is not our interests
@@ -421,7 +387,7 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
     let mut filter_set: CSCallFilterSet = HashMap::new();
 
     // send has buffer, so ignore it
-    // filter_set.insert(CriticalSectionCall::ChSend, &|tcx, cs|{
+    // filter_set.insert(Suspicious::ChSend, &|tcx, cs|{
     //     match cs.call_by_type {
     //         Some(caller_ty) => {
     //             let fname = tcx.item_name(cs.callee.def_id());
@@ -432,7 +398,7 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
     //     }
     // } );
 
-    filter_set.insert(CriticalSectionCall::ChRecv, &|tcx, cs|{
+    filter_set.insert(Suspicious::ChRecv, &|tcx, cs|{
         match cs.call_by_type {
             Some(caller_ty) => {
                 let fname = tcx.item_name(cs.callee.def_id());
@@ -444,7 +410,7 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
     } );
 
     // condition variable requires more logic
-    // filter_set.insert(CriticalSectionCall::CondVarWait, &|tcx, cs|{
+    // filter_set.insert(Suspicious::CondVarWait, &|tcx, cs|{
     //     match cs.call_by_type {
     //         Some(caller_ty) => {
     //             let fname = tcx.item_name(cs.callee.def_id());
@@ -495,9 +461,9 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
         for report in breports {
             match report {
                 Report::DoubleLock(content) => {
-                    let mut cs = CallInCriticalSection {
+                    let mut cs = SuspiciousCall {
                         callchains: Vec::new(),
-                        ty: CriticalSectionCall::DoubleLock
+                        ty: Suspicious::DoubleLock
                     };
 
                     
@@ -527,9 +493,9 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
                     
                 },
                 Report::ConflictLock(content) => {
-                    let mut cs = CallInCriticalSection {
+                    let mut cs = SuspiciousCall {
                         callchains: Vec::new(),
-                        ty: CriticalSectionCall::ConflictLock
+                        ty: Suspicious::ConflictLock
                     };
                     for d in content.diagnosis {
                         if let Some((filename, rg)) = parse_span_str(&d.first_lock_span) {
@@ -573,9 +539,9 @@ pub fn analyze(tcx: TyCtxt, boqin_reports: Option<Vec<Report>>) -> Result<Analys
         let mut bcalls:Vec<BeautifiedCallInCriticalSection> = Vec::new();
         for c in &result.calls  {
             let tystr;
-            if c.ty == CriticalSectionCall::ChRecv {
+            if c.ty == Suspicious::ChRecv {
                 tystr = "RecvInCriticalSection"
-            } else if c.ty == CriticalSectionCall::CondVarWait {
+            } else if c.ty == Suspicious::CondVarWait {
                 tystr = "WaitInCriticalSection"
             } else {
                 continue;

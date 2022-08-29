@@ -70,6 +70,7 @@ impl<'tcx, 'a> rustc_mir_dataflow::Analysis<'tcx> for LifetimeAnalysis<'tcx, 'a>
                 state.remove(local);
             }
             StatementKind::Assign( box (_lhs, ref rhs)) => {
+                
                 match rhs {
                     Rvalue::Use(op) => {
                         match op {
@@ -120,6 +121,18 @@ impl<'tcx, 'a> rustc_mir_dataflow::Analysis<'tcx> for LifetimeAnalysis<'tcx, 'a>
         _block: BasicBlock,
         _return_places: CallReturnPlaces<'_, 'tcx>
     ) {
+        let body_id = self.body.source.def_id();
+        let mut lts = self.lifetimes.borrow_mut();
+        let bbdata = &self.body.basic_blocks()[_block];
         
+        match _return_places {
+            CallReturnPlaces::Call(ret) => {
+                // set init place for local by function call
+                lts.get_lt(body_id, ret.local).init_at = Some(bbdata.terminator.as_ref().unwrap().source_info.span);
+            },
+            CallReturnPlaces::InlineAsm(_) => {
+                // ignore inline asm for now
+            },
+        }
     }
 }
