@@ -78,19 +78,26 @@ impl<'tcx> LockGuardTy<'tcx> {
             let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
             if path.starts_with("std::sync::MutexGuard<")
                 || path.starts_with("sync::mutex::MutexGuard<")
+                || path.starts_with("aptos_infallible::MutexGuard<")
             {
                 return Some(LockGuardTy::StdMutex(substs.types().next().unwrap()));
             } else if path.starts_with("lock_api::mutex::MutexGuard<")
                 || path.starts_with("parking_lot::lock_api::MutexGuard<")
+                || path.starts_with("parking_lot::lock_api::MappedMutexGuard<")
             {
                 return Some(LockGuardTy::ParkingLotMutex(substs.types().nth(1).unwrap()));
             } else if path.starts_with("spin::mutex::MutexGuard<")
                 || path.starts_with("spin::MutexGuard<")
+                || path.starts_with("spin::mutex::SpinMutexGuard<")
             {
                 return Some(LockGuardTy::SpinMutex(substs.types().next().unwrap()));
-            } else if path.starts_with("std::sync::RwLockReadGuard<") {
+            } else if path.starts_with("std::sync::RwLockReadGuard<")
+                || path.starts_with("aptos_infallible::RwLockReadGuard<")
+            {
                 return Some(LockGuardTy::StdRwLockRead(substs.types().next().unwrap()));
-            } else if path.starts_with("std::sync::RwLockWriteGuard<") {
+            } else if path.starts_with("std::sync::RwLockWriteGuard<")
+                || path.starts_with("aptos_infallible::RwLockWriteGuard<")
+            {
                 return Some(LockGuardTy::StdRwLockWrite(substs.types().next().unwrap()));
             } else if path.starts_with("lock_api::rwlock::RwLockReadGuard<")
                 || path.starts_with("parking_lot::lock_api::RwLockReadGuard<")
@@ -108,6 +115,13 @@ impl<'tcx> LockGuardTy<'tcx> {
                 || path.starts_with("spin::RwLockWriteGuard<")
             {
                 return Some(LockGuardTy::SpinWrite(substs.types().next().unwrap()));
+            } else if let Some(first_part) = path.split("<").next() {
+                if first_part.contains("MutexGuard")
+                    || first_part.contains("RwLockReadGuard")
+                    || first_part.contains("RwLockWriteGuard")
+                {
+                    log::info!("Unknown LockGuard: {}", path);
+                }
             }
         }
         None
