@@ -58,6 +58,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
         compiler: &rustc_interface::interface::Compiler,
         queries: &'tcx rustc_interface::Queries<'tcx>,
     ) -> rustc_driver::Compilation {
+        use std::time::Instant;
         compiler.session().abort_if_errors();
         if self
             .output_directory
@@ -72,7 +73,11 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             .global_ctxt()
             .unwrap()
             .peek_mut()
-            .enter(|tcx| self.analyze_with_lockbud(compiler, tcx));
+            .enter(|tcx| {
+                let now = Instant::now();
+                self.analyze_with_lockbud(compiler, tcx);
+                println!("Elapsed: {:.2?}", now.elapsed().as_micros());
+            });
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
