@@ -2,9 +2,9 @@
 extern crate rustc_data_structures;
 extern crate rustc_hash;
 
-mod report;
-pub use report::Report;
-use report::{DeadlockDiagnosis, ReportContent};
+pub mod report;
+use super::report::{Report, ReportContent};
+use report::DeadlockDiagnosis;
 
 use crate::analysis::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, AliasId, ApproximateAliasKind};
@@ -648,7 +648,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     diagnose_one_relation(a, b, lockguards, callgraph, self.tcx)
                 })
                 .collect::<Vec<_>>();
-            let report = report::Report::ConflictLock(ReportContent::new(
+            let report = Report::ConflictLock(ReportContent::new(
                 "ConflictLock".to_owned(),
                 "Possibly".to_owned(),
                 diagnosis,

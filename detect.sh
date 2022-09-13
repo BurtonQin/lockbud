@@ -26,6 +26,7 @@ export LOCKBUD_LOG=info
 # or shorter
 #export LOCKBUD_FLAGS="-k deadlock -b -l inter,intra"
 export LOCKBUD_FLAGS="-k deadlock -b -l cc"
+#export LOCKBUD_FLAGS="-k atomicity_violation"
 
 # Find all Cargo.tomls recursively under the detecting directory
 # and record them in cargo_dir.txt

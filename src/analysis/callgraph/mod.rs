@@ -136,7 +136,7 @@ impl<'tcx> CallGraph<'tcx> {
         }
     }
 
-    /// Find the callsite locations (weight) on the edge from source to target.
+    /// Find the callsites (weight) on the edge from source to target.
     pub fn callsites(
         &self,
         source: InstanceId,

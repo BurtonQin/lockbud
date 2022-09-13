@@ -16,8 +16,9 @@ use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
 
 use crate::analysis::callgraph::CallGraph;
 
+use crate::detector::atomic::AtomicityViolationDetector;
 use crate::detector::lock::DeadlockDetector;
-use crate::detector::lock::Report;
+use crate::detector::report::Report;
 
 pub struct LockBudCallbacks {
     options: Options,
@@ -116,8 +117,20 @@ impl LockBudCallbacks {
         let mut alias_analysis = AliasAnalysis::new(tcx, &callgraph);
         match self.options.detector_kind {
             DetectorKind::Deadlock => {
+                debug!("Detecting deadlock");
                 let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
                 let reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
+                if !reports.is_empty() {
+                    let j = serde_json::to_string_pretty(&reports).unwrap();
+                    warn!("{}", j);
+                    let stats = report_stats(&crate_name, &reports);
+                    warn!("{}", stats);
+                }
+            }
+            DetectorKind::AtomicityViolation => {
+                debug!("Detecting atomicity violation");
+                let mut atomicity_violation_detector = AtomicityViolationDetector::new(tcx);
+                let reports = atomicity_violation_detector.detect(&callgraph, &mut alias_analysis);
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
@@ -137,7 +150,8 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
         mut conflictlock_possibly,
         mut condvar_deadlock_probably,
         mut condvar_deadlock_possibly,
-    ) = (0, 0, 0, 0, 0, 0);
+        mut atomicity_violation_possibly,
+    ) = (0, 0, 0, 0, 0, 0, 0);
     for report in reports {
         match report {
             Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
@@ -157,9 +171,12 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
                     _ => {}
                 }
             }
+            Report::AtomicityViolation(_) => {
+                atomicity_violation_possibly += 1;
+            }
         }
     }
-    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly)
+    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly, atomicity_violation_possibly)
 }
 
 #[cfg(test)]

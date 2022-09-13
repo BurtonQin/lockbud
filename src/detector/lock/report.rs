@@ -85,36 +85,10 @@ impl CondvarDeadlockDiagnosis {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-pub struct ReportContent<D> {
-    pub bug_kind: String,
-    pub possibility: String,
-    pub diagnosis: D,
-    pub explanation: String,
-}
-
-impl<D: std::fmt::Debug> ReportContent<D> {
-    pub fn new(bug_kind: String, possibility: String, diagnosis: D, explanation: String) -> Self {
-        Self {
-            bug_kind,
-            possibility,
-            diagnosis,
-            explanation,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub enum Report {
-    DoubleLock(ReportContent<DeadlockDiagnosis>),
-    ConflictLock(ReportContent<Vec<DeadlockDiagnosis>>),
-    CondvarDeadlock(ReportContent<CondvarDeadlockDiagnosis>),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detector::report::ReportContent;
 
     #[test]
     fn test_deadlock_diagnosis() {
