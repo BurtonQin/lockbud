@@ -74,57 +74,56 @@ impl<'tcx> LockGuardTy<'tcx> {
         // sync: MutexGuard<i32, Poison>
         // spin: MutexGuard<i32>
         // parking_lot: MutexGuard<RawMutex, i32>
+        // async, tokio, future: currently Unsupported
         if let ty::TyKind::Adt(adt_def, substs) = local_ty.kind() {
             let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
-            if path.starts_with("std::sync::MutexGuard<")
-                || path.starts_with("sync::mutex::MutexGuard<")
-                || path.starts_with("aptos_infallible::MutexGuard<")
-            {
-                return Some(LockGuardTy::StdMutex(substs.types().next().unwrap()));
-            } else if path.starts_with("lock_api::mutex::MutexGuard<")
-                || path.starts_with("parking_lot::lock_api::MutexGuard<")
-                || path.starts_with("parking_lot::lock_api::MappedMutexGuard<")
-            {
-                return Some(LockGuardTy::ParkingLotMutex(substs.types().nth(1).unwrap()));
-            } else if path.starts_with("spin::mutex::MutexGuard<")
-                || path.starts_with("spin::MutexGuard<")
-                || path.starts_with("spin::mutex::SpinMutexGuard<")
-            {
-                return Some(LockGuardTy::SpinMutex(substs.types().next().unwrap()));
-            } else if path.starts_with("std::sync::RwLockReadGuard<")
-                || path.starts_with("aptos_infallible::RwLockReadGuard<")
-            {
-                return Some(LockGuardTy::StdRwLockRead(substs.types().next().unwrap()));
-            } else if path.starts_with("std::sync::RwLockWriteGuard<")
-                || path.starts_with("aptos_infallible::RwLockWriteGuard<")
-            {
-                return Some(LockGuardTy::StdRwLockWrite(substs.types().next().unwrap()));
-            } else if path.starts_with("lock_api::rwlock::RwLockReadGuard<")
-                || path.starts_with("parking_lot::lock_api::RwLockReadGuard<")
-            {
-                return Some(LockGuardTy::ParkingLotRead(substs.types().nth(1).unwrap()));
-            } else if path.starts_with("lock_api::rwlock::RwLockWriteGuard<")
-                || path.starts_with("parking_lot::lock_api::RwLockWriteGuard<")
-            {
-                return Some(LockGuardTy::ParkingLotWrite(substs.types().nth(1).unwrap()));
-            } else if path.starts_with("spin::rw_lock::RwLockReadGuard<")
-                || path.starts_with("spin::RwLockReadGuard<")
-            {
-                return Some(LockGuardTy::SpinRead(substs.types().next().unwrap()));
-            } else if path.starts_with("spin::rw_lock::RwLockWriteGuard<")
-                || path.starts_with("spin::RwLockWriteGuard<")
-            {
-                return Some(LockGuardTy::SpinWrite(substs.types().next().unwrap()));
-            } else if let Some(first_part) = path.split("<").next() {
-                if first_part.contains("MutexGuard")
-                    || first_part.contains("RwLockReadGuard")
-                    || first_part.contains("RwLockWriteGuard")
-                {
-                    log::info!("Unknown LockGuard: {}", path);
-                }
+            // quick fail
+            if !path.contains("MutexGuard") && !path.contains("RwLockReadGuard") && !path.contains("RwLockWriteGuard") {
+                return None;
             }
+            let first_part = path.split('<').next()?;
+            if first_part.contains("MutexGuard") {
+                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                    // Currentlly does not support async lock or loom
+                    None
+                } else if first_part.contains("spin") {
+                    Some(LockGuardTy::SpinMutex(substs.types().next()?))
+                } else if first_part.contains("lock_api") || first_part.contains("parking_lot") {
+                    Some(LockGuardTy::ParkingLotMutex(substs.types().nth(1)?))
+                } else {
+                    // std::sync::Mutex or its wrapper by default
+                    Some(LockGuardTy::StdMutex(substs.types().next()?))
+                }
+            } else if first_part.contains("RwLockReadGuard") {
+                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                    // Currentlly does not support async lock or loom
+                    None
+                } else if first_part.contains("spin") {
+                    Some(LockGuardTy::SpinRead(substs.types().next()?))
+                } else if first_part.contains("lock_api") || first_part.contains("parking_lot") {
+                    Some(LockGuardTy::ParkingLotRead(substs.types().nth(1)?))
+                } else {
+                    // std::sync::RwLockReadGuard or its wrapper by default
+                    Some(LockGuardTy::StdRwLockRead(substs.types().next()?))
+                }
+            } else if first_part.contains("RwLockWriteGuard") {
+                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                    // Currentlly does not support async lock or loom
+                    None
+                } else if first_part.contains("spin") {
+                    Some(LockGuardTy::SpinWrite(substs.types().next()?))
+                } else if first_part.contains("lock_api") || first_part.contains("parking_lot") {
+                    Some(LockGuardTy::ParkingLotWrite(substs.types().nth(1)?))
+                } else {
+                    // std::sync::RwLockReadGuard or its wrapper by default
+                    Some(LockGuardTy::StdRwLockWrite(substs.types().next()?))
+                }
+            } else {
+                None
+            }
+        } else {
+            None
         }
-        None
     }
 
     /// In parking_lot, the read lock is by default non-recursive if not specified.
