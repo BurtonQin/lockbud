@@ -1,3 +1,5 @@
+//! Modified from
+//! <https://github.com/rust-lang/rust/blob/aedf78e56b2279cc869962feac5153b6ba7001ed/compiler/rustc_borrowck/src/diagnostics/find_all_local_uses.rs>
 extern crate rustc_middle;
 
 use std::collections::BTreeSet;
@@ -8,8 +10,6 @@ use rustc_middle::mir::{Body, Local, Location};
 use rustc_middle::mir::visit::{
     MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext,
 };
-
-use rustc_middle::bug;
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum DefUse {
@@ -83,7 +83,7 @@ pub fn categorize(context: PlaceContext) -> Option<DefUse> {
         PlaceContext::NonUse(NonUseContext::VarDebugInfo) => None,
 
         PlaceContext::MutatingUse(MutatingUseContext::Deinit | MutatingUseContext::SetDiscriminant) => {
-            bug!("These statements are not allowed in this MIR phase")
+            None
         }
     }
 }
