@@ -36,4 +36,5 @@ pub enum Report {
     ConflictLock(ReportContent<Vec<DeadlockDiagnosis>>),
     CondvarDeadlock(ReportContent<CondvarDeadlockDiagnosis>),
     AtomicityViolation(ReportContent<AtomicityViolationDiagnosis>),
+    InvalidFree(ReportContent<String>),
 }

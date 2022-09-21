@@ -6,6 +6,7 @@ extern crate rustc_hir;
 use std::path::PathBuf;
 
 use crate::analysis::pointsto::AliasAnalysis;
+use crate::detector::memory::InvalidFreeDetector;
 use crate::options::{CrateNameList, DetectorKind, Options};
 use log::{debug, warn};
 use rustc_driver::Compilation;
@@ -138,6 +139,17 @@ impl LockBudCallbacks {
                     warn!("{}", stats);
                 }
             }
+            DetectorKind::Memory => {
+                debug!("Detecting memory bugs");
+                let memory_bug_detector = InvalidFreeDetector::new(tcx);
+                let reports = memory_bug_detector.detect(&callgraph, &mut alias_analysis);
+                if !reports.is_empty() {
+                    let j = serde_json::to_string_pretty(&reports).unwrap();
+                    warn!("{}", j);
+                    let stats = report_stats(&crate_name, &reports);
+                    warn!("{}", stats);
+                }
+            }
         }
     }
 }
@@ -151,7 +163,8 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
         mut condvar_deadlock_probably,
         mut condvar_deadlock_possibly,
         mut atomicity_violation_possibly,
-    ) = (0, 0, 0, 0, 0, 0, 0);
+        mut invalid_free_possibly,
+    ) = (0, 0, 0, 0, 0, 0, 0, 0);
     for report in reports {
         match report {
             Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
@@ -174,9 +187,12 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
             Report::AtomicityViolation(_) => {
                 atomicity_violation_possibly += 1;
             }
+            Report::InvalidFree(_) => {
+                invalid_free_possibly += 1;
+            }
         }
     }
-    format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly, atomicity_violation_possibly)
+    format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}, invalid_free: {{ possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly, atomicity_violation_possibly, invalid_free_possibly)
 }
 
 #[cfg(test)]
@@ -185,6 +201,6 @@ mod tests {
 
     #[test]
     fn test_report_stats() {
-        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains doublelock: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0));
+        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0));
     }
 }

@@ -684,6 +684,9 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
                 let node1 = ConstraintNode::Place(Place::from(local1).as_ref());
                 let node2 = ConstraintNode::Place(Place::from(local2).as_ref());
                 if instance1.def_id() == instance2.def_id() {
+                    if local1 == local2 {
+                        return ApproximateAliasKind::Probably;
+                    }
                     self.intraproc_alias(instance1, &node1, &node2)
                         .unwrap_or(ApproximateAliasKind::Unknown)
                 } else {

@@ -1,0 +1,344 @@
+// WARNING: This output format is intended for human consumers only
+// and is subject to change without notice. Knock yourself out.
+fn uninit() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/main.rs:4:13: 4:13
+    scope 1 {
+        scope 2 {
+            debug _obj => _1;            // in scope 2 at src/main.rs:7:13: 7:17
+        }
+        scope 3 {
+            let _1: std::vec::Vec<i32>;  // in scope 3 at src/main.rs:7:13: 7:17
+        }
+    }
+
+    bb0: {
+        _1 = uninitialized::<Vec<i32>>() -> bb1; // scope 3 at src/main.rs:7:30: 7:50
+                                         // mir::Constant
+                                         // + span: src/main.rs:7:30: 7:48
+                                         // + literal: Const { ty: unsafe fn() -> Vec<i32> {uninitialized::<Vec<i32>>}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        drop(_1) -> bb2;                 // scope 1 at src/main.rs:8:5: 8:6
+    }
+
+    bb2: {
+        return;                          // scope 0 at src/main.rs:9:2: 9:2
+    }
+}
+
+fn assume_write_fp() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/main.rs:11:22: 11:22
+    let mut _1: std::mem::MaybeUninit<std::vec::Vec<i32>>; // in scope 0 at src/main.rs:12:9: 12:19
+    let _2: &mut std::vec::Vec<i32>;     // in scope 0 at src/main.rs:14:9: 14:33
+    let mut _3: &mut std::mem::MaybeUninit<std::vec::Vec<i32>>; // in scope 0 at src/main.rs:14:9: 14:33
+    let mut _4: std::vec::Vec<i32>;      // in scope 0 at src/main.rs:14:22: 14:32
+    let _5: std::vec::Vec<i32>;          // in scope 0 at src/main.rs:15:9: 15:29
+    let mut _6: std::mem::MaybeUninit<std::vec::Vec<i32>>; // in scope 0 at src/main.rs:15:9: 15:15
+    scope 1 {
+        debug uninit => _1;              // in scope 1 at src/main.rs:12:9: 12:19
+        scope 2 {
+        }
+    }
+
+    bb0: {
+        _1 = MaybeUninit::<Vec<i32>>::uninit() -> bb1; // scope 0 at src/main.rs:12:22: 12:65
+                                         // mir::Constant
+                                         // + span: src/main.rs:12:22: 12:63
+                                         // + user_ty: UserType(0)
+                                         // + literal: Const { ty: fn() -> MaybeUninit<Vec<i32>> {MaybeUninit::<Vec<i32>>::uninit}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        _3 = &mut _1;                    // scope 2 at src/main.rs:14:9: 14:33
+        _4 = Vec::<i32>::new() -> bb2;   // scope 2 at src/main.rs:14:22: 14:32
+                                         // mir::Constant
+                                         // + span: src/main.rs:14:22: 14:30
+                                         // + user_ty: UserType(1)
+                                         // + literal: Const { ty: fn() -> Vec<i32> {Vec::<i32>::new}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb2: {
+        _2 = MaybeUninit::<Vec<i32>>::write(move _3, move _4) -> bb3; // scope 2 at src/main.rs:14:9: 14:33
+                                         // mir::Constant
+                                         // + span: src/main.rs:14:16: 14:21
+                                         // + literal: Const { ty: for<'r> fn(&'r mut MaybeUninit<Vec<i32>>, Vec<i32>) -> &'r mut Vec<i32> {MaybeUninit::<Vec<i32>>::write}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb3: {
+        _6 = move _1;                    // scope 2 at src/main.rs:15:9: 15:15
+        _5 = MaybeUninit::<Vec<i32>>::assume_init(move _6) -> bb4; // scope 2 at src/main.rs:15:9: 15:29
+                                         // mir::Constant
+                                         // + span: src/main.rs:15:16: 15:27
+                                         // + literal: Const { ty: unsafe fn(MaybeUninit<Vec<i32>>) -> Vec<i32> {MaybeUninit::<Vec<i32>>::assume_init}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb4: {
+        drop(_5) -> bb5;                 // scope 2 at src/main.rs:15:29: 15:30
+    }
+
+    bb5: {
+        return;                          // scope 0 at src/main.rs:17:2: 17:2
+    }
+}
+
+fn assume_ptr_write_fp() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/main.rs:19:26: 19:26
+    let mut _1: std::mem::MaybeUninit<assume_ptr_write_fp::Obj>; // in scope 0 at src/main.rs:26:9: 26:19
+    let mut _3: &mut std::mem::MaybeUninit<assume_ptr_write_fp::Obj>; // in scope 0 at src/main.rs:28:19: 28:38
+    let _4: ();                          // in scope 0 at src/main.rs:29:9: 29:49
+    let mut _5: *mut std::vec::Vec<i32>; // in scope 0 at /rustc/b31f9cc22bcd720b37ddf927afe378108a5b9a54/library/core/src/ptr/mod.rs:2019:5: 2019:20
+    let mut _6: std::vec::Vec<i32>;      // in scope 0 at src/main.rs:29:38: 29:48
+    let _7: ();                          // in scope 0 at src/main.rs:30:9: 30:43
+    let mut _8: *mut bool;               // in scope 0 at /rustc/b31f9cc22bcd720b37ddf927afe378108a5b9a54/library/core/src/ptr/mod.rs:2019:5: 2019:20
+    let _9: assume_ptr_write_fp::Obj;    // in scope 0 at src/main.rs:31:9: 31:29
+    let mut _10: std::mem::MaybeUninit<assume_ptr_write_fp::Obj>; // in scope 0 at src/main.rs:31:9: 31:15
+    scope 1 {
+        debug uninit => _1;              // in scope 1 at src/main.rs:26:9: 26:19
+        scope 2 {
+            let _2: *mut assume_ptr_write_fp::Obj; // in scope 2 at src/main.rs:28:13: 28:16
+            scope 3 {
+                debug ptr => _2;         // in scope 3 at src/main.rs:28:13: 28:16
+            }
+        }
+    }
+
+    bb0: {
+        _1 = MaybeUninit::<Obj>::uninit() -> bb1; // scope 0 at src/main.rs:26:22: 26:60
+                                         // mir::Constant
+                                         // + span: src/main.rs:26:22: 26:58
+                                         // + user_ty: UserType(0)
+                                         // + literal: Const { ty: fn() -> MaybeUninit<Obj> {MaybeUninit::<Obj>::uninit}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        _3 = &mut _1;                    // scope 2 at src/main.rs:28:19: 28:38
+        _2 = MaybeUninit::<Obj>::as_mut_ptr(move _3) -> bb2; // scope 2 at src/main.rs:28:19: 28:38
+                                         // mir::Constant
+                                         // + span: src/main.rs:28:26: 28:36
+                                         // + literal: Const { ty: for<'r> fn(&'r mut MaybeUninit<Obj>) -> *mut Obj {MaybeUninit::<Obj>::as_mut_ptr}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb2: {
+        _5 = &raw mut ((*_2).0: std::vec::Vec<i32>); // scope 3 at /rustc/b31f9cc22bcd720b37ddf927afe378108a5b9a54/library/core/src/ptr/mod.rs:2019:5: 2019:20
+        _6 = Vec::<i32>::new() -> bb3;   // scope 3 at src/main.rs:29:38: 29:48
+                                         // mir::Constant
+                                         // + span: src/main.rs:29:38: 29:46
+                                         // + user_ty: UserType(1)
+                                         // + literal: Const { ty: fn() -> Vec<i32> {Vec::<i32>::new}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb3: {
+        _4 = ptr::mut_ptr::<impl *mut Vec<i32>>::write(move _5, move _6) -> bb4; // scope 3 at src/main.rs:29:9: 29:49
+                                         // mir::Constant
+                                         // + span: src/main.rs:29:32: 29:37
+                                         // + literal: Const { ty: unsafe fn(*mut Vec<i32>, Vec<i32>) {ptr::mut_ptr::<impl *mut Vec<i32>>::write}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb4: {
+        _8 = &raw mut ((*_2).1: bool);   // scope 3 at /rustc/b31f9cc22bcd720b37ddf927afe378108a5b9a54/library/core/src/ptr/mod.rs:2019:5: 2019:20
+        _7 = ptr::mut_ptr::<impl *mut bool>::write(move _8, const true) -> bb5; // scope 3 at src/main.rs:30:9: 30:43
+                                         // mir::Constant
+                                         // + span: src/main.rs:30:32: 30:37
+                                         // + literal: Const { ty: unsafe fn(*mut bool, bool) {ptr::mut_ptr::<impl *mut bool>::write}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb5: {
+        _10 = move _1;                   // scope 3 at src/main.rs:31:9: 31:15
+        _9 = MaybeUninit::<Obj>::assume_init(move _10) -> bb6; // scope 3 at src/main.rs:31:9: 31:29
+                                         // mir::Constant
+                                         // + span: src/main.rs:31:16: 31:27
+                                         // + literal: Const { ty: unsafe fn(MaybeUninit<Obj>) -> Obj {MaybeUninit::<Obj>::assume_init}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb6: {
+        drop(_9) -> bb7;                 // scope 3 at src/main.rs:31:29: 31:30
+    }
+
+    bb7: {
+        return;                          // scope 0 at src/main.rs:33:2: 33:2
+    }
+}
+
+fn assume() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/main.rs:35:13: 35:13
+    let _1: std::mem::MaybeUninit<std::vec::Vec<i32>>; // in scope 0 at src/main.rs:36:9: 36:15
+    let _2: std::vec::Vec<i32>;          // in scope 0 at src/main.rs:38:9: 38:29
+    let mut _3: std::mem::MaybeUninit<std::vec::Vec<i32>>; // in scope 0 at src/main.rs:38:9: 38:15
+    scope 1 {
+        debug uninit => _1;              // in scope 1 at src/main.rs:36:9: 36:15
+        scope 2 {
+        }
+    }
+
+    bb0: {
+        _1 = MaybeUninit::<Vec<i32>>::uninit() -> bb1; // scope 0 at src/main.rs:36:18: 36:61
+                                         // mir::Constant
+                                         // + span: src/main.rs:36:18: 36:59
+                                         // + user_ty: UserType(0)
+                                         // + literal: Const { ty: fn() -> MaybeUninit<Vec<i32>> {MaybeUninit::<Vec<i32>>::uninit}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        _3 = move _1;                    // scope 2 at src/main.rs:38:9: 38:15
+        _2 = MaybeUninit::<Vec<i32>>::assume_init(move _3) -> bb2; // scope 2 at src/main.rs:38:9: 38:29
+                                         // mir::Constant
+                                         // + span: src/main.rs:38:16: 38:27
+                                         // + literal: Const { ty: unsafe fn(MaybeUninit<Vec<i32>>) -> Vec<i32> {MaybeUninit::<Vec<i32>>::assume_init}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb2: {
+        drop(_2) -> bb3;                 // scope 2 at src/main.rs:38:29: 38:30
+    }
+
+    bb3: {
+        return;                          // scope 0 at src/main.rs:40:2: 40:2
+    }
+}
+
+fn main() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/main.rs:42:11: 42:11
+    let _1: ();                          // in scope 0 at src/main.rs:43:5: 43:22
+    let _2: ();                          // in scope 0 at src/main.rs:44:5: 44:26
+    let _3: ();                          // in scope 0 at src/main.rs:45:5: 45:13
+    let _4: ();                          // in scope 0 at src/main.rs:46:5: 46:13
+
+    bb0: {
+        _1 = assume_write_fp() -> bb1;   // scope 0 at src/main.rs:43:5: 43:22
+                                         // mir::Constant
+                                         // + span: src/main.rs:43:5: 43:20
+                                         // + literal: Const { ty: fn() {assume_write_fp}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        _2 = assume_ptr_write_fp() -> bb2; // scope 0 at src/main.rs:44:5: 44:26
+                                         // mir::Constant
+                                         // + span: src/main.rs:44:5: 44:24
+                                         // + literal: Const { ty: fn() {assume_ptr_write_fp}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb2: {
+        _3 = assume() -> bb3;            // scope 0 at src/main.rs:45:5: 45:13
+                                         // mir::Constant
+                                         // + span: src/main.rs:45:5: 45:11
+                                         // + literal: Const { ty: fn() {assume}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb3: {
+        _4 = uninit() -> bb4;            // scope 0 at src/main.rs:46:5: 46:13
+                                         // mir::Constant
+                                         // + span: src/main.rs:46:5: 46:11
+                                         // + literal: Const { ty: fn() {uninit}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb4: {
+        return;                          // scope 0 at src/main.rs:47:2: 47:2
+    }
+}
+
+fn assume_ptr_write_fp::<impl at src/main.rs:20:14: 20:19>::fmt(_1: &Obj, _2: &mut Formatter) -> Result<(), std::fmt::Error> {
+    debug self => _1;                    // in scope 0 at src/main.rs:20:14: 20:19
+    debug f => _2;                       // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _0: std::result::Result<(), std::fmt::Error>; // return place in scope 0 at src/main.rs:20:14: 20:19
+    let _3: &std::vec::Vec<i32>;         // in scope 0 at src/main.rs:22:9: 22:20
+    let _4: &bool;                       // in scope 0 at src/main.rs:23:9: 23:16
+    let mut _6: std::fmt::DebugStruct;   // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _7: &mut std::fmt::Formatter; // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _8: &str;                    // in scope 0 at src/main.rs:20:14: 20:19
+    let _9: &str;                        // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _10: &mut std::fmt::DebugStruct; // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _11: &mut std::fmt::DebugStruct; // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _12: &str;                   // in scope 0 at src/main.rs:22:9: 22:20
+    let _13: &str;                       // in scope 0 at src/main.rs:22:9: 22:20
+    let mut _14: &dyn std::fmt::Debug;   // in scope 0 at src/main.rs:22:9: 22:20
+    let mut _15: &&std::vec::Vec<i32>;   // in scope 0 at src/main.rs:22:9: 22:20
+    let _16: &&std::vec::Vec<i32>;       // in scope 0 at src/main.rs:22:9: 22:20
+    let _17: &std::vec::Vec<i32>;        // in scope 0 at src/main.rs:22:9: 22:20
+    let mut _18: &mut std::fmt::DebugStruct; // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _19: &mut std::fmt::DebugStruct; // in scope 0 at src/main.rs:20:14: 20:19
+    let mut _20: &str;                   // in scope 0 at src/main.rs:23:9: 23:16
+    let _21: &str;                       // in scope 0 at src/main.rs:23:9: 23:16
+    let mut _22: &dyn std::fmt::Debug;   // in scope 0 at src/main.rs:23:9: 23:16
+    let mut _23: &&bool;                 // in scope 0 at src/main.rs:23:9: 23:16
+    let _24: &&bool;                     // in scope 0 at src/main.rs:23:9: 23:16
+    let _25: &bool;                      // in scope 0 at src/main.rs:23:9: 23:16
+    let mut _26: &mut std::fmt::DebugStruct; // in scope 0 at src/main.rs:20:14: 20:19
+    scope 1 {
+        debug __self_0_0 => _3;          // in scope 1 at src/main.rs:22:9: 22:20
+        debug __self_0_1 => _4;          // in scope 1 at src/main.rs:23:9: 23:16
+        let _5: &mut std::fmt::DebugStruct; // in scope 1 at no-location
+        scope 2 {
+            debug debug_trait_builder => _5; // in scope 2 at no-location
+            scope 3 {
+                scope 4 {
+                }
+            }
+        }
+    }
+
+    bb0: {
+        _3 = &((*_1).0: std::vec::Vec<i32>); // scope 0 at src/main.rs:22:9: 22:20
+        _4 = &((*_1).1: bool);           // scope 0 at src/main.rs:23:9: 23:16
+        _7 = &mut (*_2);                 // scope 1 at src/main.rs:20:14: 20:19
+        _9 = const "Obj";                // scope 1 at src/main.rs:20:14: 20:19
+                                         // mir::Constant
+                                         // + span: src/main.rs:20:14: 20:19
+                                         // + literal: Const { ty: &str, val: Value(Slice(..)) }
+        _8 = _9;                         // scope 1 at src/main.rs:20:14: 20:19
+        _6 = Formatter::debug_struct(move _7, move _8) -> bb1; // scope 1 at src/main.rs:20:14: 20:19
+                                         // mir::Constant
+                                         // + span: src/main.rs:20:14: 20:19
+                                         // + user_ty: UserType(0)
+                                         // + literal: Const { ty: for<'b, 'r> fn(&'b mut Formatter, &'r str) -> DebugStruct<'b, '_> {Formatter::debug_struct}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb1: {
+        _5 = &mut _6;                    // scope 1 at src/main.rs:20:14: 20:19
+        _11 = &mut (*_5);                // scope 2 at src/main.rs:20:14: 20:19
+        _13 = const "a";                 // scope 2 at src/main.rs:22:9: 22:20
+                                         // mir::Constant
+                                         // + span: src/main.rs:22:9: 22:20
+                                         // + literal: Const { ty: &str, val: Value(Slice(..)) }
+        _12 = _13;                       // scope 2 at src/main.rs:22:9: 22:20
+        _17 = _3;                        // scope 2 at src/main.rs:22:9: 22:20
+        _16 = &_17;                      // scope 2 at src/main.rs:22:9: 22:20
+        _15 = _16;                       // scope 2 at src/main.rs:22:9: 22:20
+        _14 = move _15 as &dyn std::fmt::Debug (Pointer(Unsize)); // scope 2 at src/main.rs:22:9: 22:20
+        _10 = DebugStruct::field(move _11, move _12, move _14) -> bb2; // scope 2 at src/main.rs:20:14: 20:19
+                                         // mir::Constant
+                                         // + span: src/main.rs:20:14: 20:19
+                                         // + user_ty: UserType(1)
+                                         // + literal: Const { ty: for<'r, 's, 't0> fn(&'r mut DebugStruct, &'s str, &'t0 (dyn Debug + 't0)) -> &'r mut DebugStruct {DebugStruct::field}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb2: {
+        _19 = &mut (*_5);                // scope 3 at src/main.rs:20:14: 20:19
+        _21 = const "b";                 // scope 3 at src/main.rs:23:9: 23:16
+                                         // mir::Constant
+                                         // + span: src/main.rs:23:9: 23:16
+                                         // + literal: Const { ty: &str, val: Value(Slice(..)) }
+        _20 = _21;                       // scope 3 at src/main.rs:23:9: 23:16
+        _25 = _4;                        // scope 3 at src/main.rs:23:9: 23:16
+        _24 = &_25;                      // scope 3 at src/main.rs:23:9: 23:16
+        _23 = _24;                       // scope 3 at src/main.rs:23:9: 23:16
+        _22 = move _23 as &dyn std::fmt::Debug (Pointer(Unsize)); // scope 3 at src/main.rs:23:9: 23:16
+        _18 = DebugStruct::field(move _19, move _20, move _22) -> bb3; // scope 3 at src/main.rs:20:14: 20:19
+                                         // mir::Constant
+                                         // + span: src/main.rs:20:14: 20:19
+                                         // + user_ty: UserType(2)
+                                         // + literal: Const { ty: for<'r, 's, 't0> fn(&'r mut DebugStruct, &'s str, &'t0 (dyn Debug + 't0)) -> &'r mut DebugStruct {DebugStruct::field}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb3: {
+        _26 = &mut (*_5);                // scope 4 at src/main.rs:20:14: 20:19
+        _0 = DebugStruct::finish(move _26) -> bb4; // scope 4 at src/main.rs:20:14: 20:19
+                                         // mir::Constant
+                                         // + span: src/main.rs:20:14: 20:19
+                                         // + user_ty: UserType(3)
+                                         // + literal: Const { ty: for<'r> fn(&'r mut DebugStruct) -> Result<(), std::fmt::Error> {DebugStruct::finish}, val: Value(Scalar(<ZST>)) }
+    }
+
+    bb4: {
+        return;                          // scope 0 at src/main.rs:20:19: 20:19
+    }
+}
