@@ -147,15 +147,15 @@ mod test {
 
     #[test]
     fn test_parse_span_str() {
-        assert_eq!(parse_span_str("src/main.rs:8:14: 8:20"), RangeInFile(PosInFile(8, 14), PosInFile(8, 20)));
+        assert_eq!(parse_span_str("src/main.rs:8:14: 8:20 (#0)").unwrap().1, RangeInFile(PosInFile(8, 14), PosInFile(8, 20)));
     }
     
     #[test]
     fn test_ranges_in_file_many() {
         let mut ranges_in_file: RangesInFile = Default::default();
-        let spans_str = ["src/main.rs:8:14: 8:20","src/main.rs:8:18: 8:19","src/main.rs:5:25: 5:26","src/main.rs:6:17: 6:32","src/main.rs:5:39: 5:40","src/main.rs:8:20: 8:21","src/main.rs:4:9: 4:10","src/main.rs:8:5: 8:23","src/main.rs:5:9: 5:16","src/main.rs:5:25: 5:26","src/main.rs:4:19: 4:23","src/main.rs:5:20: 5:40","src/main.rs:5:39: 5:40","src/main.rs:8:14: 8:20","src/main.rs:5:14: 5:15","src/main.rs:9:1: 9:2","src/main.rs:5:40: 5:41","src/main.rs:8:18: 8:19","src/main.rs:5:9: 5:16","src/main.rs:5:14: 5:15","src/main.rs:5:39: 5:40","src/main.rs:8:19: 8:20","src/main.rs:5:39: 5:40","src/main.rs:4:13: 7:6"];
+        let spans_str = ["src/main.rs:8:14: 8:20 (#0)","src/main.rs:8:18: 8:19 (#0)","src/main.rs:5:25: 5:26 (#0)","src/main.rs:6:17: 6:32 (#0)","src/main.rs:5:39: 5:40 (#0)","src/main.rs:8:20: 8:21 (#0)","src/main.rs:4:9: 4:10 (#0)","src/main.rs:8:5: 8:23 (#0)","src/main.rs:5:9: 5:16 (#0)","src/main.rs:5:25: 5:26 (#0)","src/main.rs:4:19: 4:23 (#0)","src/main.rs:5:20: 5:40 (#0)","src/main.rs:5:39: 5:40 (#0)","src/main.rs:8:14: 8:20 (#0)","src/main.rs:5:14: 5:15 (#0)","src/main.rs:9:1: 9:2 (#0)","src/main.rs:5:40: 5:41 (#0)","src/main.rs:8:18: 8:19 (#0)","src/main.rs:5:9: 5:16 (#0)","src/main.rs:5:14: 5:15 (#0)","src/main.rs:5:39: 5:40 (#0)","src/main.rs:8:19: 8:20 (#0)","src/main.rs:5:39: 5:40 (#0)","src/main.rs:4:13: 7:6 (#0)"];
         for span_str in &spans_str {
-            let range = parse_span_str(span_str);
+            let range = parse_span_str(span_str).unwrap().1;
             ranges_in_file.add(range);
         }
         println!("{:#?}", ranges_in_file.merge());
