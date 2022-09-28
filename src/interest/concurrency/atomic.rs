@@ -1,12 +1,14 @@
 //! Find atomic functions and classify them into read, write, read-write.
 extern crate rustc_hash;
+extern crate rustc_hir;
 extern crate rustc_middle;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use rustc_hash::FxHashMap;
-use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_hir::def_id::DefId;
+use rustc_middle::ty::{Instance, SubstsRef, TyCtxt};
 
 static ATOMIC_API_REGEX: Lazy<FxHashMap<&'static str, Regex>> = Lazy::new(|| {
     macro_rules! atomic_api_prefix {
@@ -65,5 +67,31 @@ impl AtomicApi {
         } else {
             None
         }
+    }
+}
+
+// AtomicPtr::store(&self, ptr: *mut T, order: Ordering)
+// Alias: self = ptr
+static ATOMIC_PTR_STORE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(std|core)::sync::atomic::AtomicPtr::<.*>::store").unwrap());
+
+pub fn is_atomic_ptr_store<'tcx>(
+    def_id: DefId,
+    substs: SubstsRef<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> bool {
+    let path = tcx.def_path_str_with_substs(def_id, substs);
+    ATOMIC_PTR_STORE.is_match(&path)
+}
+
+#[cfg(test)]
+mod tests2 {
+    use super::*;
+
+    #[test]
+    fn test_atomic_ptr_store() {
+        assert!(ATOMIC_PTR_STORE.is_match("std::sync::atomic::AtomicPtr::<T>::store"));
+        assert!(!ATOMIC_PTR_STORE.is_match("std::sync::atomic::AtomicUsize::store"));
+        assert!(!ATOMIC_PTR_STORE.is_match("std::sync::atomic::AtomicPtr::<T>::load"));
     }
 }

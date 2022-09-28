@@ -37,4 +37,5 @@ pub enum Report {
     CondvarDeadlock(ReportContent<CondvarDeadlockDiagnosis>),
     AtomicityViolation(ReportContent<AtomicityViolationDiagnosis>),
     InvalidFree(ReportContent<String>),
+    UseAfterFree(ReportContent<String>),
 }
