@@ -28,6 +28,7 @@ use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph};
 
 use crate::analysis::callgraph::{CallGraph, CallGraphNode, CallSiteLocation, InstanceId};
+use crate::interest::concurrency::atomic::is_atomic_ptr_store;
 use crate::interest::concurrency::lock::LockGuardId;
 use crate::interest::memory::ownership;
 
@@ -563,6 +564,8 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
 
     /// For destination = Arc::clone(move arg0) and destination = ptr::read(move arg0),
     /// destination = alias copy args0
+    /// For AtomicPtr::store(move args0, move args1, move args2),
+    /// args0 = copy args1
     /// For other callsites like `destination = call fn(move args0)`,
     /// heuristically assumes that
     /// destination = copy args0
@@ -574,19 +577,29 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             ..
         } = &terminator.kind
         {
-            if let (&[Operand::Move(arg)], dest) = (args.as_slice(), destination) {
-                let func_ty = func.ty(self.body, self.tcx);
-                match func_ty.kind() {
-                    TyKind::FnDef(def_id, substs)
+            match (args.as_slice(), destination) {
+                (&[Operand::Move(arg)], dest) => {
+                    let func_ty = func.ty(self.body, self.tcx);
+                    if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
                         if ownership::is_arc_or_rc_clone(*def_id, *substs, self.tcx)
-                            || ownership::is_ptr_read(*def_id, self.tcx) =>
-                    {
-                        return self.process_alias_copy(arg.as_ref(), dest.as_ref());
+                            || ownership::is_ptr_read(*def_id, self.tcx)
+                        {
+                            return self.process_alias_copy(arg.as_ref(), dest.as_ref());
+                        }
                     }
-                    _ => {}
+                    self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
                 }
-                self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
-            };
+                (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest) => {
+                    let func_ty = func.ty(self.body, self.tcx);
+                    if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
+                        if is_atomic_ptr_store(*def_id, *substs, self.tcx) {
+                            // AtomicPtr::store(arg0, arg1, ord) equals to arg0 = call(arg1)
+                            return self.process_call_arg_dest(arg1.as_ref(), arg0.as_ref());
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -725,40 +738,69 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
             (Some(instance1), Some(instance2)) => {
                 let node1 = ConstraintNode::Place(Place::from(local1).as_ref());
                 let node2 = ConstraintNode::Place(Place::from(local2).as_ref());
-                let body1 = self.tcx.instance_mir(instance1.def);
-                let points_to_map = self.get_or_insert_pts(instance1.def_id(), body1).clone();
                 if instance1.def_id() == instance2.def_id() {
-                    let mut final_alias_kind = ApproximateAliasKind::Unknown;
-                    for local_pointee in &points_to_map[&node1] {
-                        let alias_kind = self
-                            .intraproc_alias(instance1, local_pointee, &node2)
-                            .unwrap_or(ApproximateAliasKind::Unknown);
-                        if alias_kind > final_alias_kind {
-                            final_alias_kind = alias_kind;
-                        }
-                    }
-                    final_alias_kind
+                    self.intra_points_to(instance1, node1, node2)
                 } else {
-                    let mut final_alias_kind = ApproximateAliasKind::Unknown;
-                    for local_pointee in &points_to_map[&node1] {
-                        let alias_kind = self
-                            .interproc_alias(instance1, local_pointee, instance2, &node2)
-                            .unwrap_or(ApproximateAliasKind::Unknown);
-                        if alias_kind > final_alias_kind {
-                            final_alias_kind = alias_kind;
-                        }
-                    }
-                    final_alias_kind
+                    self.inter_points_to(instance1, node1, instance2, node2)
                 }
             }
             _ => ApproximateAliasKind::Unknown,
         }
     }
 
+    pub fn intra_points_to(
+        &mut self,
+        instance: &Instance<'tcx>,
+        pointer: ConstraintNode<'tcx>,
+        pointee: ConstraintNode<'tcx>,
+    ) -> ApproximateAliasKind {
+        let body = self.tcx.instance_mir(instance.def);
+        let points_to_map = self.get_or_insert_pts(instance.def_id(), body).clone();
+        let mut final_alias_kind = ApproximateAliasKind::Unknown;
+        let set = match points_to_map.get(&pointer) {
+            Some(set) => set,
+            None => return ApproximateAliasKind::Unlikely,
+        };
+        for local_pointee in set {
+            let alias_kind = self
+                .intraproc_alias(instance, local_pointee, &pointee)
+                .unwrap_or(ApproximateAliasKind::Unknown);
+            if alias_kind > final_alias_kind {
+                final_alias_kind = alias_kind;
+            }
+        }
+        final_alias_kind
+    }
+
+    pub fn inter_points_to(
+        &mut self,
+        instance1: &Instance<'tcx>,
+        pointer: ConstraintNode<'tcx>,
+        instance2: &Instance<'tcx>,
+        pointee: ConstraintNode<'tcx>,
+    ) -> ApproximateAliasKind {
+        let body1 = self.tcx.instance_mir(instance1.def);
+        let points_to_map = self.get_or_insert_pts(instance1.def_id(), body1).clone();
+        let mut final_alias_kind = ApproximateAliasKind::Unknown;
+        let set = match points_to_map.get(&pointer) {
+            Some(set) => set,
+            None => return ApproximateAliasKind::Unlikely,
+        };
+        for local_pointee in set {
+            let alias_kind = self
+                .interproc_alias(instance1, local_pointee, instance2, &pointee)
+                .unwrap_or(ApproximateAliasKind::Unknown);
+            if alias_kind > final_alias_kind {
+                final_alias_kind = alias_kind;
+            }
+        }
+        final_alias_kind
+    }
+
     /// Get the points-to info from cache `pts`.
     /// If not exists, then perform points-to analysis
     /// and add the obtained points-to info to cache.
-    fn get_or_insert_pts(&mut self, def_id: DefId, body: &Body<'tcx>) -> &PointsToMap<'tcx> {
+    pub fn get_or_insert_pts(&mut self, def_id: DefId, body: &Body<'tcx>) -> &PointsToMap<'tcx> {
         if self.pts.contains_key(&def_id) {
             self.pts.get(&def_id).unwrap()
         } else {
@@ -963,6 +1005,11 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         } else {
             Some(def_inst_upvars)
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn points_to_map(&self, def_id: DefId) -> Option<&PointsToMap<'tcx>> {
+        self.pts.get(&def_id)
     }
 }
 

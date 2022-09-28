@@ -6,7 +6,7 @@ extern crate rustc_hir;
 use std::path::PathBuf;
 
 use crate::analysis::pointsto::AliasAnalysis;
-use crate::detector::memory::InvalidFreeDetector;
+use crate::detector::memory::{InvalidFreeDetector, UseAfterFreeDetector};
 use crate::options::{CrateNameList, DetectorKind, Options};
 use log::{debug, warn};
 use rustc_driver::Compilation;
@@ -71,15 +71,11 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             // No need to analyze a build script, but do generate code.
             return Compilation::Continue;
         }
-        queries
-            .global_ctxt()
-            .unwrap()
-            .peek_mut()
-            .enter(|tcx| {
-                let now = Instant::now();
-                self.analyze_with_lockbud(compiler, tcx);
-                println!("Elapsed: {:.2?}", now.elapsed().as_micros());
-            });
+        queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
+            let now = Instant::now();
+            self.analyze_with_lockbud(compiler, tcx);
+            println!("Elapsed: {:.2?}", now.elapsed().as_micros());
+        });
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
@@ -146,8 +142,15 @@ impl LockBudCallbacks {
             }
             DetectorKind::Memory => {
                 debug!("Detecting memory bugs");
-                let memory_bug_detector = InvalidFreeDetector::new(tcx);
-                let reports = memory_bug_detector.detect(&callgraph, &mut alias_analysis);
+                let mut reports = {
+                    let invalid_free_detector = InvalidFreeDetector::new(tcx);
+                    invalid_free_detector.detect(&callgraph, &mut alias_analysis)
+                };
+                let reports2 = {
+                    let use_after_free_detector = UseAfterFreeDetector::new(tcx);
+                    use_after_free_detector.detect(&callgraph, &mut alias_analysis)
+                };
+                reports.extend(reports2.into_iter());
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
@@ -169,7 +172,8 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
         mut condvar_deadlock_possibly,
         mut atomicity_violation_possibly,
         mut invalid_free_possibly,
-    ) = (0, 0, 0, 0, 0, 0, 0, 0);
+        mut use_after_free_possibly,
+    ) = (0, 0, 0, 0, 0, 0, 0, 0, 0);
     for report in reports {
         match report {
             Report::DoubleLock(doublelock) => match doublelock.possibility.as_str() {
@@ -195,9 +199,12 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
             Report::InvalidFree(_) => {
                 invalid_free_possibly += 1;
             }
+            Report::UseAfterFree(_) => {
+                use_after_free_possibly += 1;
+            }
         }
     }
-    format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}, invalid_free: {{ possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly, atomicity_violation_possibly, invalid_free_possibly)
+    format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}, invalid_free: {{ possibly: {} }}, use_after_free: {{ possibly: {} }}", crate_name, doublelock_probably, doublelock_possibly, conflictlock_probably, conflictlock_possibly, condvar_deadlock_probably, condvar_deadlock_possibly, atomicity_violation_possibly, invalid_free_possibly, use_after_free_possibly)
 }
 
 #[cfg(test)]
@@ -206,6 +213,6 @@ mod tests {
 
     #[test]
     fn test_report_stats() {
-        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0));
+        assert_eq!(report_stats("dummy", &[]), format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}, invalid_free: {{ possibly: {} }}, use_after_free: {{ possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0, 0, 0, 0));
     }
 }
