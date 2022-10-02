@@ -1,7 +1,7 @@
 extern crate rustc_data_structures;
 extern crate rustc_middle;
 
-use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Location, Place, Terminator, TerminatorKind};
 use rustc_middle::ty::TyCtxt;
@@ -102,21 +102,24 @@ impl<'tcx> Visitor<'tcx> for AutoDropCollector<'tcx> {
 }
 
 fn is_reachable(from: Location, to: Location, body: &Body<'_>) -> bool {
+    if from.block == to.block {
+        return from.statement_index <= to.statement_index;
+    }
+    let from_block = from.block;
+    let to_block = to.block;
     let mut worklist = Vec::new();
-    worklist.push(from);
+    let mut visited = FxHashSet::default();
+    worklist.push(from_block);
+    visited.insert(from_block);
     while let Some(curr) = worklist.pop() {
-        if curr == to {
+        if curr == to_block {
             return true;
         }
-        if body.terminator_loc(curr.block) == curr {
-            for succ in body.basic_blocks()[curr.block].terminator().successors() {
-                worklist.push(Location {
-                    block: succ,
-                    statement_index: 0,
-                });
+        for succ in body.basic_blocks()[curr].terminator().successors() {
+            if !visited.insert(succ) {
+                continue;
             }
-        } else {
-            worklist.push(curr.successor_within_block());
+            worklist.push(succ);
         }
     }
     false

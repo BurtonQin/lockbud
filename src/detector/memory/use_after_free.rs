@@ -110,6 +110,7 @@ fn collect_raw_ptrs_escape_to_global<'tcx>(
     body: &Body<'tcx>,
     tcx: TyCtxt<'tcx>,
 ) -> FxHashSet<(ConstraintNode<'tcx>, ConstraintNode<'tcx>)> {
+    let local_end = Local::new(body.local_decls().len());
     pts.iter()
         .filter_map(|(ptr, ptes)| {
             if let ConstraintNode::ConstantDeref(_) = ptr {
@@ -120,7 +121,9 @@ fn collect_raw_ptrs_escape_to_global<'tcx>(
         })
         .flat_map(|(ptr, ptes)| ptes.iter().map(|pte| (pte, *ptr)))
         .filter_map(|(pte, ptr)| match pte {
-            ConstraintNode::Alloc(place) if place.ty(body, tcx).ty.is_unsafe_ptr() => {
+            ConstraintNode::Alloc(place)
+                if place.local < local_end && place.ty(body, tcx).ty.is_unsafe_ptr() =>
+            {
                 Some((ConstraintNode::Place(*place), ptr))
             }
             _ => None,
@@ -190,7 +193,10 @@ fn detect_escape_to_return_or_param<'tcx>(
                 ConstraintNode::Alloc(pte) => {
                     if pte.local < first_non_param_local {
                         alias_with_params.push(pte)
-                    } else if pte.local < local_end && pte.ty(body, tcx).ty.is_unsafe_ptr() {
+                    } else if pte.local < local_end
+                        && pte.projection.is_empty()
+                        && pte.ty(body, tcx).ty.is_unsafe_ptr()
+                    {
                         alias_with_raw_ptrs.push(pte)
                     }
                 }
@@ -212,6 +218,9 @@ fn detect_escape_to_return_or_param<'tcx>(
                     _ => continue,
                 };
                 for (location, drop_place) in drops {
+                    if body.basic_blocks()[location.block].is_cleanup {
+                        continue;
+                    }
                     if drop_place.as_ref() == *pte_place {
                         let ptr_span = body.local_decls[ptr.local].source_info.span;
                         let diagnosis = format!("Escape to Param/Return: Raw ptr {:?} at {:?} escapes to {:?} but pointee is dropped at {:?}", ptr, ptr_span, alias_with_params, body.source_info(*location).span);
