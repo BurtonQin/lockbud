@@ -613,7 +613,9 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     ));
                     reports.push(report);
                 }
-                _ if NotDeadlockReason::RecursiveRead != reason => {
+                _ if NotDeadlockReason::RecursiveRead != reason
+                    && NotDeadlockReason::SameSpan != reason =>
+                {
                     // if unlikely doublelock, add the pair into graph to check conflictlock
                     // when the lockguards are gen by call rather than move
                     if !lockguards[a].is_gen_only_by_move() && !lockguards[b].is_gen_only_by_move()
@@ -667,6 +669,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
 enum NotDeadlockReason {
     TrueDeadlock,
     RecursiveRead,
+    SameSpan,
     // TODO,
 }
 
@@ -688,6 +691,12 @@ fn deadlock_possibility<'tcx>(
                 NotDeadlockReason::RecursiveRead,
             );
         }
+    }
+    // Assume that a lock in a loop or recursive functions will not deadlock with itself,
+    // in which case the lock spans of the two locks are the same.
+    // This may miss some bugs but can reduce many FPs.
+    if lockguards[a].span == lockguards[b].span {
+        return (DeadlockPossibility::Unlikely, NotDeadlockReason::SameSpan);
     }
     let possibility = match a_ty.deadlock_with(b_ty) {
         DeadlockPossibility::Probably => match alias_analysis.alias((*a).into(), (*b).into()) {
