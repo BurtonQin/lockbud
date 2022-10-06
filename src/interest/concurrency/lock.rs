@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use rustc_hash::FxHashMap;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
-use rustc_middle::mir::{Body, Local, Location};
+use rustc_middle::mir::{Body, Local, Location, TerminatorKind};
 use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
 use rustc_span::Span;
 
@@ -78,12 +78,19 @@ impl<'tcx> LockGuardTy<'tcx> {
         if let ty::TyKind::Adt(adt_def, substs) = local_ty.kind() {
             let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
             // quick fail
-            if !path.contains("MutexGuard") && !path.contains("RwLockReadGuard") && !path.contains("RwLockWriteGuard") {
+            if !path.contains("MutexGuard")
+                && !path.contains("RwLockReadGuard")
+                && !path.contains("RwLockWriteGuard")
+            {
                 return None;
             }
             let first_part = path.split('<').next()?;
             if first_part.contains("MutexGuard") {
-                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                if first_part.contains("async")
+                    || first_part.contains("tokio")
+                    || first_part.contains("future")
+                    || first_part.contains("loom")
+                {
                     // Currentlly does not support async lock or loom
                     None
                 } else if first_part.contains("spin") {
@@ -95,7 +102,11 @@ impl<'tcx> LockGuardTy<'tcx> {
                     Some(LockGuardTy::StdMutex(substs.types().next()?))
                 }
             } else if first_part.contains("RwLockReadGuard") {
-                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                if first_part.contains("async")
+                    || first_part.contains("tokio")
+                    || first_part.contains("future")
+                    || first_part.contains("loom")
+                {
                     // Currentlly does not support async lock or loom
                     None
                 } else if first_part.contains("spin") {
@@ -107,7 +118,11 @@ impl<'tcx> LockGuardTy<'tcx> {
                     Some(LockGuardTy::StdRwLockRead(substs.types().next()?))
                 }
             } else if first_part.contains("RwLockWriteGuard") {
-                if first_part.contains("async") || first_part.contains("tokio") || first_part.contains("future") || first_part.contains("loom") {
+                if first_part.contains("async")
+                    || first_part.contains("tokio")
+                    || first_part.contains("future")
+                    || first_part.contains("loom")
+                {
                     // Currentlly does not support async lock or loom
                     None
                 } else if first_part.contains("spin") {
@@ -171,6 +186,7 @@ pub struct LockGuardInfo<'tcx> {
     pub span: Span,
     pub gen_locs: SmallVec<[Location; 4]>,
     pub move_gen_locs: SmallVec<[Location; 4]>,
+    pub recursive_gen_locs: SmallVec<[Location; 4]>,
     pub kill_locs: SmallVec<[Location; 4]>,
 }
 
@@ -181,12 +197,17 @@ impl<'tcx> LockGuardInfo<'tcx> {
             span,
             gen_locs: Default::default(),
             move_gen_locs: Default::default(),
+            recursive_gen_locs: Default::default(),
             kill_locs: Default::default(),
         }
     }
 
     pub fn is_gen_only_by_move(&self) -> bool {
         self.gen_locs == self.move_gen_locs
+    }
+
+    pub fn is_gen_only_by_recursive(&self) -> bool {
+        self.gen_locs == self.recursive_gen_locs
     }
 }
 
@@ -252,7 +273,29 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
                         info.gen_locs.push(location);
                         info.move_gen_locs.push(location);
                     }
-                    MutatingUseContext::Call => info.gen_locs.push(location),
+                    MutatingUseContext::Call => {
+                        // if lockguard = parking_lot::recursive_read() then record to recursive_gen_locs
+                        if let LockGuardTy::ParkingLotRead(_) = info.lockguard_ty {
+                            let term = self.body[location.block].terminator();
+                            if let TerminatorKind::Call { ref func, .. } = term.kind {
+                                let func_ty = func.ty(self.body, self.tcx);
+                                // Only after monomorphizing can Instance::resolve work
+                                let func_ty =
+                                    self.instance.subst_mir_and_normalize_erasing_regions(
+                                        self.tcx,
+                                        self.param_env,
+                                        func_ty,
+                                    );
+                                if let ty::FnDef(def_id, _) = *func_ty.kind() {
+                                    let fn_name = self.tcx.def_path_str(def_id);
+                                    if fn_name.contains("read_recursive") {
+                                        info.recursive_gen_locs.push(location);
+                                    }
+                                }
+                            }
+                        }
+                        info.gen_locs.push(location);
+                    }
                     _ => {}
                 },
                 _ => {}
