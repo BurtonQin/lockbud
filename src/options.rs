@@ -33,7 +33,7 @@ fn make_options_parser<'help>() -> Command<'help> {
             Arg::new("kind")
                 .short('k')
                 .long("detector-kind")
-                .possible_values(&["deadlock"])
+                .possible_values(["deadlock"])
                 .default_values(&["deadlock"])
                 .help("The detector kind"),
         )

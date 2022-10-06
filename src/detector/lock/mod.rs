@@ -20,7 +20,6 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Direction, Graph};
 
-use rustc_data_structures::graph::WithSuccessors;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{Body, Location, Operand, TerminatorKind};
 use rustc_middle::ty::{ParamEnv, TyCtxt};
@@ -121,8 +120,8 @@ impl<'tcx> DeadlockDetector<'tcx> {
         let condvar_apis = self.collect_condvars(callgraph);
         let mut lockguards_before_condvar_apis: FxHashMap<InstanceId, LockGuardsBeforeCallSites> =
             condvar_apis
-                .iter()
-                .map(|(instance_id, _)| (*instance_id, FxHashMap::default()))
+                .keys()
+                .map(|instance_id| (*instance_id, FxHashMap::default()))
                 .collect();
         // Init `worklist` with all the `InstanceId`s
         let mut worklist = callgraph
@@ -540,7 +539,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
     ) -> FxHashMap<Location, LiveLockGuards> {
         let (gen_map, kill_map) = Self::gen_kill_locations(lockguard_info);
         let mut worklist: VecDeque<Location> = Default::default();
-        for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
+        for (bb, bb_data) in body.basic_blocks.iter_enumerated() {
             for stmt_idx in 0..bb_data.statements.len() + 1 {
                 worklist.push_back(Location {
                     block: bb,
@@ -570,7 +569,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 }
             } else {
                 // if is terminator
-                for succ_bb in body.successors(loc.block) {
+                for succ_bb in body[loc.block].terminator().successors() {
                     let succ = Location {
                         block: succ_bb,
                         statement_index: 0,
