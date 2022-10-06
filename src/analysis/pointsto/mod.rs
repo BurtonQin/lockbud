@@ -557,7 +557,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             | StatementKind::AscribeUserType(_, _)
             | StatementKind::Coverage(_)
             | StatementKind::Nop
-            | StatementKind::CopyNonOverlapping(_) => {}
+            | StatementKind::Intrinsic(_) => {}
         }
     }
 
@@ -578,7 +578,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                 let func_ty = func.ty(self.body, self.tcx);
                 match func_ty.kind() {
                     TyKind::FnDef(def_id, substs)
-                        if ownership::is_arc_or_rc_clone(*def_id, *substs, self.tcx)
+                        if ownership::is_arc_or_rc_clone(*def_id, substs, self.tcx)
                             || ownership::is_ptr_read(*def_id, self.tcx) =>
                     {
                         return self.process_alias_copy(arg.as_ref(), dest.as_ref());
