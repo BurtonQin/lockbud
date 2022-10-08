@@ -319,7 +319,7 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
         body: &Body<'tcx>,
     ) -> Vec<Vec<BasicBlock>> {
         let mut paths = Vec::new();
-        let mut visited = BitSet::new_empty(body.basic_blocks().len());
+        let mut visited = BitSet::new_empty(body.basic_blocks.len());
         let mut path = Vec::new();
         self.find_path_recursive(
             loc1.block,

@@ -115,7 +115,7 @@ fn is_reachable(from: Location, to: Location, body: &Body<'_>) -> bool {
         if curr == to_block {
             return true;
         }
-        for succ in body.basic_blocks()[curr].terminator().successors() {
+        for succ in body.basic_blocks[curr].terminator().successors() {
             if !visited.insert(succ) {
                 continue;
             }

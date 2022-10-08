@@ -57,12 +57,7 @@ impl<'tcx> CallGraphNode<'tcx> {
     }
 
     pub fn match_instance(&self, other: &Instance<'tcx>) -> bool {
-        match self {
-            CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) if inst == other => {
-                true
-            }
-            _ => false,
-        }
+        matches!(self, CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) if inst == other)
     }
 }
 

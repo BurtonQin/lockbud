@@ -218,7 +218,7 @@ fn detect_escape_to_return_or_param<'tcx>(
                     _ => continue,
                 };
                 for (location, drop_place) in drops {
-                    if body.basic_blocks()[location.block].is_cleanup {
+                    if body.basic_blocks[location.block].is_cleanup {
                         continue;
                     }
                     if drop_place.as_ref() == *pte_place {

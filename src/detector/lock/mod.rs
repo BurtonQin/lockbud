@@ -10,7 +10,7 @@ use crate::analysis::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::analysis::pointsto::{AliasAnalysis, AliasId, ApproximateAliasKind};
 use crate::interest::concurrency::condvar::{CondvarApi, ParkingLotCondvarApi, StdCondvarApi};
 use crate::interest::concurrency::lock::{
-    DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap,
+    DeadlockPossibility, LockGuardCollector, LockGuardId, LockGuardMap, LockGuardTy,
 };
 
 use petgraph::algo;
@@ -20,7 +20,6 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Direction, Graph};
 
-use rustc_data_structures::graph::WithSuccessors;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{Body, Location, Operand, TerminatorKind};
 use rustc_middle::ty::{ParamEnv, TyCtxt};
@@ -121,8 +120,8 @@ impl<'tcx> DeadlockDetector<'tcx> {
         let condvar_apis = self.collect_condvars(callgraph);
         let mut lockguards_before_condvar_apis: FxHashMap<InstanceId, LockGuardsBeforeCallSites> =
             condvar_apis
-                .iter()
-                .map(|(instance_id, _)| (*instance_id, FxHashMap::default()))
+                .keys()
+                .map(|instance_id| (*instance_id, FxHashMap::default()))
                 .collect();
         // Init `worklist` with all the `InstanceId`s
         let mut worklist = callgraph
@@ -363,7 +362,8 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                                 g2,
                                                 lockguards,
                                                 alias_analysis,
-                                            ) > DeadlockPossibility::Unlikely
+                                            )
+                                            .0 > DeadlockPossibility::Unlikely
                                     })
                                     .collect::<Vec<_>>();
                                 // exists (g1, g2) in aliased_pairs: alias(g2, mutex_guard1)
@@ -437,7 +437,8 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                                 g2,
                                                 lockguards,
                                                 alias_analysis,
-                                            ) > DeadlockPossibility::Unlikely
+                                            )
+                                            .0 > DeadlockPossibility::Unlikely
                                     })
                                     .collect::<Vec<_>>();
                                 // exists (g1, g2) in aliased_pairs: alias(g2, mutex_guard1)
@@ -538,7 +539,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
     ) -> FxHashMap<Location, LiveLockGuards> {
         let (gen_map, kill_map) = Self::gen_kill_locations(lockguard_info);
         let mut worklist: VecDeque<Location> = Default::default();
-        for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
+        for (bb, bb_data) in body.basic_blocks.iter_enumerated() {
             for stmt_idx in 0..bb_data.statements.len() + 1 {
                 worklist.push_back(Location {
                     block: bb,
@@ -568,7 +569,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 }
             } else {
                 // if is terminator
-                for succ_bb in body.successors(loc.block) {
+                for succ_bb in body[loc.block].terminator().successors() {
                     let succ = Location {
                         block: succ_bb,
                         statement_index: 0,
@@ -599,7 +600,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
         // Detect doublelock:
         // forall relation(a, b): deadlock(a, b) => doublelock(a, b)
         for (a, b) in &self.lockguard_relations {
-            let possibility = deadlock_possibility(a, b, lockguards, alias_analysis);
+            let (possibility, reason) = deadlock_possibility(a, b, lockguards, alias_analysis);
             match possibility {
                 DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {
                     let diagnosis = diagnose_doublelock(a, b, lockguards, callgraph, self.tcx);
@@ -611,7 +612,9 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     ));
                     reports.push(report);
                 }
-                _ => {
+                _ if NotDeadlockReason::RecursiveRead != reason
+                    && NotDeadlockReason::SameSpan != reason =>
+                {
                     // if unlikely doublelock, add the pair into graph to check conflictlock
                     // when the lockguards are gen by call rather than move
                     if !lockguards[a].is_gen_only_by_move() && !lockguards[b].is_gen_only_by_move()
@@ -620,6 +623,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                         relation_to_nodes.insert((*a, *b), node);
                     }
                 }
+                _ => {}
             }
         }
         // Detect conflictlock:
@@ -630,7 +634,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
         // if exists a cycle, i.e., edge(r1, r2), edge(r2, r3), ..., edge(rn, r1) then conflictlock((r1, r2, r3, ..., rn))
         for ((_, a), node1) in relation_to_nodes.iter() {
             for ((b, _), node2) in relation_to_nodes.iter() {
-                let possibility = deadlock_possibility(a, b, lockguards, alias_analysis);
+                let (possibility, _) = deadlock_possibility(a, b, lockguards, alias_analysis);
                 match possibility {
                     DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {
                         conflictlock_graph.add_edge(*node1, *node2, possibility);
@@ -660,6 +664,14 @@ impl<'tcx> DeadlockDetector<'tcx> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotDeadlockReason {
+    TrueDeadlock,
+    RecursiveRead,
+    SameSpan,
+    // TODO,
+}
+
 /// Check deadlock possibility.
 /// for two lockguards, first check if their types may deadlock;
 /// if so, then check if they may alias.
@@ -668,10 +680,24 @@ fn deadlock_possibility<'tcx>(
     b: &LockGuardId,
     lockguards: &LockGuardMap<'tcx>,
     alias_analysis: &mut AliasAnalysis,
-) -> DeadlockPossibility {
+) -> (DeadlockPossibility, NotDeadlockReason) {
     let a_ty = &lockguards[a].lockguard_ty;
     let b_ty = &lockguards[b].lockguard_ty;
-    match a_ty.deadlock_with(b_ty) {
+    if let (LockGuardTy::ParkingLotRead(_), LockGuardTy::ParkingLotRead(_)) = (a_ty, b_ty) {
+        if lockguards[b].is_gen_only_by_recursive() {
+            return (
+                DeadlockPossibility::Unlikely,
+                NotDeadlockReason::RecursiveRead,
+            );
+        }
+    }
+    // Assume that a lock in a loop or recursive functions will not deadlock with itself,
+    // in which case the lock spans of the two locks are the same.
+    // This may miss some bugs but can reduce many FPs.
+    if lockguards[a].span == lockguards[b].span {
+        return (DeadlockPossibility::Unlikely, NotDeadlockReason::SameSpan);
+    }
+    let possibility = match a_ty.deadlock_with(b_ty) {
         DeadlockPossibility::Probably => match alias_analysis.alias((*a).into(), (*b).into()) {
             ApproximateAliasKind::Probably => DeadlockPossibility::Probably,
             ApproximateAliasKind::Possibly => DeadlockPossibility::Possibly,
@@ -685,7 +711,8 @@ fn deadlock_possibility<'tcx>(
             ApproximateAliasKind::Unknown => DeadlockPossibility::Unknown,
         },
         _ => DeadlockPossibility::Unlikely,
-    }
+    };
+    (possibility, NotDeadlockReason::TrueDeadlock)
 }
 
 /// Generate doublelock diagnosis.

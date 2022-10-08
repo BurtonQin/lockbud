@@ -100,7 +100,7 @@ impl<'tcx> AtomicityViolationDetector<'tcx> {
                         .tcx
                         .instance_mir(callgraph.index_to_instance(*caller).unwrap().instance().def);
                     let mut uses_cache = FxHashMap::default();
-                    let control_deps = controldep::control_deps(body);
+                    let control_deps = controldep::control_deps(&body.basic_blocks);
                     let data_deps = datadep::data_deps(body);
                     let read_callsites =
                         callsite_locations(callgraph, *caller, atomic_read).unwrap();

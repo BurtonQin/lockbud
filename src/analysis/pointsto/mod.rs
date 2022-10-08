@@ -558,7 +558,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             | StatementKind::AscribeUserType(_, _)
             | StatementKind::Coverage(_)
             | StatementKind::Nop
-            | StatementKind::CopyNonOverlapping(_) => {}
+            | StatementKind::Intrinsic(_) => {}
         }
     }
 

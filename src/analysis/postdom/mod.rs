@@ -7,7 +7,7 @@ use rustc_data_structures::graph::{
     ControlFlowGraph, DirectedGraph, WithNumNodes, WithPredecessors, WithSuccessors,
 };
 use rustc_index::vec::{Idx, IndexVec};
-use rustc_middle::mir::{BasicBlock, Body, Location, TerminatorKind};
+use rustc_middle::mir::{BasicBlock, BasicBlocks, Location, TerminatorKind};
 use std::borrow::BorrowMut;
 
 #[cfg(test)]
@@ -35,11 +35,10 @@ impl<'graph, G: WithEndNodes> WithEndNodes for &'graph G {
     }
 }
 
-impl<'tcx> WithEndNodes for &Body<'tcx> {
+impl<'tcx> WithEndNodes for BasicBlocks<'tcx> {
     #[inline]
     fn end_nodes(&self) -> Vec<Self::Node> {
-        self.basic_blocks()
-            .iter_enumerated()
+        self.iter_enumerated()
             .filter_map(|(bb, bb_data)| {
                 if self.successors(bb).count() == 0 {
                     if bb_data.terminator().kind == TerminatorKind::Return {

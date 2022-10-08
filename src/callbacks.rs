@@ -97,7 +97,7 @@ impl LockBudCallbacks {
             CrateNameList::Black(crates) if crates.contains(&crate_name) => return,
             _ => {}
         };
-        if tcx.sess.opts.debugging_opts.no_codegen || !tcx.sess.opts.output_types.should_codegen() {
+        if tcx.sess.opts.unstable_opts.no_codegen || !tcx.sess.opts.output_types.should_codegen() {
             return;
         }
         let cgus = tcx.collect_and_partition_mono_items(()).1;
