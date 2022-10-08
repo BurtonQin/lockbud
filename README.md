@@ -9,10 +9,12 @@ Please refer to our paper for more interesting concurrency and memory bug catego
 
 This project is my initial efforts to improve the concurrency safety in Rust ecosystem by statically detecting two common kinds of deadlock bugs:
 doublelock and locks in conflicting order (conflictlock for brevity).
-Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free.
+
+A deadlock Condvar detector is implemented along with the two deadlock detectors, but it may report many FPs.
+Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free and invalid free. See branch uaf.
 
 ## Install
-Currently supports rustc 1.63.0-nightly (1f34da9ec 2022-06-14)
+Currently supports rustc 1.66.0-nightly (c97d02cdb 2022-10-05)
 ```
 $ git clone https://github.com/BurtonQin/lockbud.git
 $ cd lockbud
@@ -172,4 +174,4 @@ Bugs detected and fixed (one PR may fix multiple bugs):
 16. https://github.com/apache/incubator-teaclave-sgx-sdk/pull/269
 
 ## License
-The lockbud Project is dual-licensed under BSD-3.
+The lockbud Project is licensed under BSD-3.
