@@ -60,7 +60,6 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
         compiler: &rustc_interface::interface::Compiler,
         queries: &'tcx rustc_interface::Queries<'tcx>,
     ) -> rustc_driver::Compilation {
-        use std::time::Instant;
         compiler.session().abort_if_errors();
         if self
             .output_directory
@@ -72,9 +71,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             return Compilation::Continue;
         }
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
-            let now = Instant::now();
             self.analyze_with_lockbud(compiler, tcx);
-            println!("Elapsed: {:.2?}", now.elapsed().as_micros());
         });
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
@@ -151,6 +148,44 @@ impl LockBudCallbacks {
                     use_after_free_detector.detect(&callgraph, &mut alias_analysis)
                 };
                 reports.extend(reports2.into_iter());
+                if !reports.is_empty() {
+                    let j = serde_json::to_string_pretty(&reports).unwrap();
+                    warn!("{}", j);
+                    let stats = report_stats(&crate_name, &reports);
+                    warn!("{}", stats);
+                }
+            }
+            DetectorKind::All => {
+                debug!("Detecting all bugs");
+                let mut reports;
+                {
+                    let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
+                    reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
+                }
+                {
+                    let mut atomicity_violation_detector = AtomicityViolationDetector::new(tcx);
+                    reports.extend(
+                        atomicity_violation_detector
+                            .detect(&callgraph, &mut alias_analysis)
+                            .into_iter(),
+                    );
+                }
+                {
+                    let invalid_free_detector = InvalidFreeDetector::new(tcx);
+                    reports.extend(
+                        invalid_free_detector
+                            .detect(&callgraph, &mut alias_analysis)
+                            .into_iter(),
+                    );
+                }
+                {
+                    let use_after_free_detector = UseAfterFreeDetector::new(tcx);
+                    reports.extend(
+                        use_after_free_detector
+                            .detect(&callgraph, &mut alias_analysis)
+                            .into_iter(),
+                    );
+                }
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);

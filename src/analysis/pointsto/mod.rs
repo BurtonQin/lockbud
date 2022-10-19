@@ -581,7 +581,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                 (&[Operand::Move(arg)], dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
-                        if ownership::is_arc_or_rc_clone(*def_id, *substs, self.tcx)
+                        if ownership::is_arc_or_rc_clone(*def_id, substs, self.tcx)
                             || ownership::is_ptr_read(*def_id, self.tcx)
                         {
                             return self.process_alias_copy(arg.as_ref(), dest.as_ref());
@@ -592,7 +592,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                 (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
-                        if is_atomic_ptr_store(*def_id, *substs, self.tcx) {
+                        if is_atomic_ptr_store(*def_id, substs, self.tcx) {
                             // AtomicPtr::store(arg0, arg1, ord) equals to arg0 = call(arg1)
                             return self.process_call_arg_dest(arg1.as_ref(), arg0.as_ref());
                         }

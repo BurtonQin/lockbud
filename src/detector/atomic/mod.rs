@@ -123,20 +123,18 @@ impl<'tcx> AtomicityViolationDetector<'tcx> {
                                 }
                             };
                             if !read_write_callsites.iter().any(|read_write_callsite| {
-                                match atomic_uses_influences(
-                                    *read_write_callsite,
-                                    *write_callsite,
-                                    (*caller, body),
-                                    alias_analysis,
-                                    &mut uses_cache,
-                                    &data_deps,
-                                    &control_deps,
-                                ) {
-                                    Some(DependenceKind::Control) | Some(DependenceKind::Both) => {
-                                        true
-                                    }
-                                    _ => false,
-                                }
+                                matches!(
+                                    atomic_uses_influences(
+                                        *read_write_callsite,
+                                        *write_callsite,
+                                        (*caller, body),
+                                        alias_analysis,
+                                        &mut uses_cache,
+                                        &data_deps,
+                                        &control_deps,
+                                    ),
+                                    Some(DependenceKind::Control) | Some(DependenceKind::Both)
+                                )
                             }) {
                                 let fn_name = self.tcx.def_path_str(
                                     callgraph

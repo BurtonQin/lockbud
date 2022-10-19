@@ -321,7 +321,7 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
         let mut paths = Vec::new();
         let mut visited = BitSet::new_empty(body.basic_blocks.len());
         let mut path = Vec::new();
-        self.find_path_recursive(
+        find_path_recursive(
             loc1.block,
             loc2.block,
             body,
@@ -331,32 +331,31 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
         );
         paths
     }
+}
 
-    fn find_path_recursive(
-        &self,
-        u: BasicBlock,
-        d: BasicBlock,
-        body: &Body<'tcx>,
-        path: &mut Vec<BasicBlock>,
-        visited: &mut BitSet<BasicBlock>,
-        paths: &mut Vec<Vec<BasicBlock>>,
-    ) {
-        visited.insert(u);
-        path.push(u);
-        if u == d {
-            // output
-            paths.push(path.clone());
-        } else {
-            let data = &body[u];
-            if let Some(ref term) = data.terminator {
-                for succ in term.successors() {
-                    if !visited.contains(succ) {
-                        self.find_path_recursive(succ, d, body, path, visited, paths);
-                    }
+fn find_path_recursive<'tcx>(
+    u: BasicBlock,
+    d: BasicBlock,
+    body: &Body<'tcx>,
+    path: &mut Vec<BasicBlock>,
+    visited: &mut BitSet<BasicBlock>,
+    paths: &mut Vec<Vec<BasicBlock>>,
+) {
+    visited.insert(u);
+    path.push(u);
+    if u == d {
+        // output
+        paths.push(path.clone());
+    } else {
+        let data = &body[u];
+        if let Some(ref term) = data.terminator {
+            for succ in term.successors() {
+                if !visited.contains(succ) {
+                    find_path_recursive(succ, d, body, path, visited, paths);
                 }
             }
         }
-        path.pop();
-        visited.remove(u);
     }
+    path.pop();
+    visited.remove(u);
 }
