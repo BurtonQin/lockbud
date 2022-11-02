@@ -589,6 +589,16 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                     }
                     self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
                 }
+                (&[Operand::Move(arg), _], dest) => {
+                    let func_ty = func.ty(self.body, self.tcx);
+                    if let TyKind::FnDef(def_id, _) = func_ty.kind() {
+                        if ownership::is_index(*def_id, self.tcx) {
+                            // index(arg0, arg1)
+                            // e.g., <String as Index<std::ops::Range<usize>>>::index(move _97, move _98)
+                            return self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
+                        }
+                    }
+                }
                 (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, substs) = func_ty.kind() {

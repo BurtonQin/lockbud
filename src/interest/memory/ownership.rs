@@ -34,3 +34,9 @@ pub fn is_rc(arg_ty_name: &str) -> bool {
 pub fn is_ptr_read(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     tcx.def_path_str(def_id).starts_with("std::ptr::read::<")
 }
+
+/// z = <_ as Index<_>>::index(x, y)
+#[inline]
+pub fn is_index(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    tcx.def_path_str(def_id).ends_with("::index")
+}
