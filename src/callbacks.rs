@@ -71,7 +71,6 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
         queries
             .global_ctxt()
             .unwrap()
-            .peek_mut()
             .enter(|tcx| self.analyze_with_lockbud(compiler, tcx));
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
