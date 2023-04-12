@@ -557,7 +557,9 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             | StatementKind::AscribeUserType(_, _)
             | StatementKind::Coverage(_)
             | StatementKind::Nop
-            | StatementKind::Intrinsic(_) => {}
+            | StatementKind::Intrinsic(_)
+            | StatementKind::PlaceMention(_)
+            | StatementKind::ConstEvalCounter => {}
         }
     }
 
