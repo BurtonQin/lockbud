@@ -1,0 +1,42 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build Docker image 
+        run: docker build -t burtonqin/lockbud .  
+  
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run tests     
+        run: docker run burtonqin/lockbud cargo test
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run format     
+        run: docker run burtonqin/lockbud cargo fmt -- --check
+  
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run format     
+        run: docker run burtonqin/lockbud cargo clippy
+        
+  push:
+    needs: [build, fmt, clippy, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Docker Hub
+        run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin 
+      
+      - name: Push to Docker Hub
+        run: docker push burtonqin/lockbud
