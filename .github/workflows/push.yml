@@ -10,6 +10,10 @@ on:
         description: 'Docker login password'
         required: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
   push:
     runs-on: ubuntu-latest
