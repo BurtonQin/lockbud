@@ -18,6 +18,8 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    outputs:
+      rust_version: ${{ env.RUST_VERSION }}
     steps:
       - uses: actions/checkout@v3
       - name: Setup Rust toolchain
@@ -56,4 +58,4 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     with:
-      rust_version: ${{ env.RUST_VERSION }}
+      rust_version: ${{ needs.test.outputs.rust_version }}
