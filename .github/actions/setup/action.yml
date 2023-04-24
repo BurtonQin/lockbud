@@ -1,7 +1,11 @@
 # Copy from OpenDAL
 name: Setup Rust Builder
 description: 'Prepare Rust Build Environment'
-
+inputs:
+  rust_version:
+    required: false
+    description: using rust-toolchain version
+    default: nightly-2023-04-11
 runs:
   using: "composite"
   steps:
@@ -19,6 +23,6 @@ runs:
       shell: bash
       # FIXME: using toolchain nightly version
       run: |
-        rustup update nightly
-        rustup component add fmt
+        rustup default ${{ github.inputs.rust_version }}
+        rustup component add rustfmt
         rustup component add clippy
