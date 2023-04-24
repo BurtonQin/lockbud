@@ -9,6 +9,11 @@ on:
       DOCKERHUB_TOKEN:
         description: 'Docker login password'
         required: true
+    inputs:
+      rust_version:
+        description: 'Docker image rust version'
+        type: string
+        required: true
 
 jobs:
   push:
@@ -44,6 +49,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          build-args: ${{ inputs.rust_version }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
