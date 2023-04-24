@@ -18,4 +18,7 @@ runs:
     - name: Setup rust related environment variables
       shell: bash
       # FIXME: using toolchain nightly version
-      run: rustup update nightly
+      run: |
+        rustup update nightly
+        rustup component add fmt
+        rustup component add clippy
