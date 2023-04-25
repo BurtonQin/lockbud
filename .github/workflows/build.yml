@@ -1,0 +1,61 @@
+name: Build for Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags:
+      - v*
+
+env:
+  RUST_VERSION: nightly-2023-04-11
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      rust_version: ${{ env.RUST_VERSION }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust_version: ${{ env.RUST_VERSION }}
+      - name: Run tests
+        run: cargo test
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust_version: ${{ env.RUST_VERSION }}
+      - name: Enforce formatting
+        run: cargo fmt --check
+  
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          rust_version: ${{ env.RUST_VERSION }}
+      - name: Linting
+        run: cargo clippy -- -D warnings
+
+  push:
+    needs: [ test, fmt, clippy ]
+    uses: ./.github/workflows/push.yml
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    with:
+      rust_version: ${{ needs.test.outputs.rust_version }}
