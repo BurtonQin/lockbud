@@ -1057,10 +1057,10 @@ type PointsToPath<'tcx> = Vec<(&'tcx [PlaceElem<'tcx>], ConstraintNode<'tcx>)>;
 /// Due to the above reason, pts(_8) does not contain _1.1 and fails to be identified as an upvar.
 /// Thus we need to track the pts-to paths from the given node to the parameter.
 /// If there exists such a path, then the node is an upvar.
-fn points_to_paths_to_param<'a, 'tcx>(
+fn points_to_paths_to_param<'tcx>(
     node: ConstraintNode<'tcx>,
     body: &'tcx Body<'tcx>,
-    points_to_map: &'a PointsToMap<'tcx>,
+    points_to_map: &PointsToMap<'tcx>,
 ) -> Vec<PointsToPath<'tcx>> {
     let mut result = Vec::new();
     let mut path = Vec::new();
@@ -1078,11 +1078,11 @@ fn points_to_paths_to_param<'a, 'tcx>(
 }
 
 /// DFS search for points-to paths from `node` to the parameter.
-fn dfs_paths_recur<'a, 'tcx>(
+fn dfs_paths_recur<'tcx>(
     prev_proj: &'tcx [PlaceElem<'tcx>],
     node: ConstraintNode<'tcx>,
     body: &'tcx Body<'tcx>,
-    points_to_map: &'a PointsToMap<'tcx>,
+    points_to_map: &PointsToMap<'tcx>,
     visited: &mut FxHashSet<ConstraintNode<'tcx>>,
     path: &mut PointsToPath<'tcx>,
     result: &mut Vec<PointsToPath<'tcx>>,

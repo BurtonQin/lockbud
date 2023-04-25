@@ -675,10 +675,10 @@ enum NotDeadlockReason {
 /// Check deadlock possibility.
 /// for two lockguards, first check if their types may deadlock;
 /// if so, then check if they may alias.
-fn deadlock_possibility<'tcx>(
+fn deadlock_possibility(
     a: &LockGuardId,
     b: &LockGuardId,
-    lockguards: &LockGuardMap<'tcx>,
+    lockguards: &LockGuardMap<'_>,
     alias_analysis: &mut AliasAnalysis,
 ) -> (DeadlockPossibility, NotDeadlockReason) {
     let a_ty = &lockguards[a].lockguard_ty;
