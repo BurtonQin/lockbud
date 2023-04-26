@@ -126,6 +126,44 @@ The `-l` is followed by a list of crate names seperated by commas.
 $ cd YourProject; cargo clean; cargo lockbud -k deadlock -b -l cc,tokio_util,indicatif
 ```
 
+### Using by docker
+
+Current available docker image is `burtonqin/lockbud`[^1]
+
+```shell
+docker run --rm -it -v ./toys/inter/:/volume burtonqin/lockbud -k deadlock
+```
+
+lockbud will execute `cargo clean && cargo lockbud -k deadlock` in `/volume` directory.
+
+> **Note**  
+> It will compile your project in docker, so you need manual remove the target directory before your ready for working.
+
+### Using in CI
+
+```yaml
+name: Lockbud
+
+on: workflow_dispatch
+
+jobs:
+  test:
+    name: lockbud
+    runs-on: ubuntu-latest
+    container:
+      image: burtonqin/lockbud
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Generate code coverage
+        run: |
+          cargo lockbud -k deadlock
+```
+
+> **Note**  
+> Currently lockbud output in stdout
+
 ## How it works
 In Rust, a lock operation returns a lockguard. The lock will be unlocked when the lockguard is dropped.
 So we can track the lifetime of lockguards to detect lock-related bugs.
@@ -175,3 +213,5 @@ Bugs detected and fixed (one PR may fix multiple bugs):
 
 ## License
 The lockbud Project is licensed under BSD-3.
+
+[^1]: https://hub.docker.com/r/burtonqin/lockbud
