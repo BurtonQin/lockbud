@@ -14,7 +14,7 @@ A deadlock Condvar detector is implemented along with the two deadlock detectors
 Ongoing work includes other concurrency bugs like atomicity violation and some memory bugs like use-after-free and invalid free. See branch uaf.
 
 ## Install
-Currently supports rustc 1.66.0-nightly (c97d02cdb 2022-10-05)
+Currently supports rustc 2023-04-11-nightly
 ```
 $ git clone https://github.com/BurtonQin/lockbud.git
 $ cd lockbud
