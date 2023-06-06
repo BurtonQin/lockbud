@@ -28,6 +28,7 @@ export LOCKBUD_LOG=info
 #export LOCKBUD_FLAGS="-k deadlock -b -l cc"
 #export LOCKBUD_FLAGS="-k atomicity_violation"
 #export LOCKBUD_FLAGS="-k memory"
+#export LOCKBUD_FLAGS="-k panic"
 export LOCKBUD_FLAGS="-k all"
 
 # Find all Cargo.tomls recursively under the detecting directory

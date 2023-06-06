@@ -19,6 +19,7 @@ use crate::analysis::callgraph::CallGraph;
 
 use crate::detector::atomic::AtomicityViolationDetector;
 use crate::detector::lock::DeadlockDetector;
+use crate::detector::panic::PanicDetector;
 use crate::detector::report::Report;
 
 pub struct LockBudCallbacks {
@@ -191,6 +192,27 @@ impl LockBudCallbacks {
                     warn!("{}", j);
                     let stats = report_stats(&crate_name, &reports);
                     warn!("{}", stats);
+                }
+            }
+            DetectorKind::Panic => {
+                debug!("Detecting panic sites");
+                let mut detector = PanicDetector::new(tcx);
+                for instance in instances {
+                    detector.detect(instance);
+                }
+                for (i, (k, v)) in detector.result().iter().enumerate() {
+                    println!(
+                        "PANIC[{}#{}]: {:?}: span[{:?}], outermost_span[{:?}], {:?}",
+                        tcx.crate_name(LOCAL_CRATE),
+                        i,
+                        k,
+                        v.0,
+                        v.1,
+                        v.2
+                    );
+                }
+                for (panic_api, cnt) in detector.statistics() {
+                    println!("{}: {:?}: {}", tcx.crate_name(LOCAL_CRATE), panic_api, cnt);
                 }
             }
         }
