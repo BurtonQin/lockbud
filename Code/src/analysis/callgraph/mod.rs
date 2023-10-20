@@ -16,7 +16,7 @@ use petgraph::{Directed, Graph};
 
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Local, LocalDecl, LocalKind, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt, TyKind};
+use rustc_middle::ty::{self, EarlyBinder, Instance, ParamEnv, TyCtxt, TyKind};
 
 /// The NodeIndex in CallGraph, denoting a unique instance in CallGraph.
 pub type InstanceId = NodeIndex;
@@ -202,10 +202,10 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
         if let TerminatorKind::Call { ref func, .. } = terminator.kind {
             let func_ty = func.ty(self.body, self.tcx);
             // Only after monomorphizing can Instance::resolve work
-            let func_ty = self.caller.subst_mir_and_normalize_erasing_regions(
+            let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
                 self.param_env,
-                func_ty,
+                EarlyBinder::bind(func_ty),
             );
             if let ty::FnDef(def_id, substs) = *func_ty.kind() {
                 if let Some(callee) = Instance::resolve(self.tcx, self.param_env, def_id, substs)
@@ -228,10 +228,10 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
     /// _20 is of type Closure, but it is actually the arg that captures
     /// the variables in the defining function.
     fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
-        let func_ty = self.caller.subst_mir_and_normalize_erasing_regions(
+        let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
             self.tcx,
             self.param_env,
-            local_decl.ty,
+            EarlyBinder::bind(local_decl.ty),
         );
         if let TyKind::Closure(def_id, substs) = func_ty.kind() {
             match self.body.local_kind(local) {

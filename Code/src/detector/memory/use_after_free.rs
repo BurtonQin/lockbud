@@ -8,7 +8,7 @@ extern crate rustc_index;
 extern crate rustc_middle;
 
 use rustc_data_structures::fx::FxHashSet;
-use rustc_index::vec::Idx;
+use rustc_index::Idx;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, HasLocalDecls, Local, Location, Place};
 use rustc_middle::ty::{Instance, TyCtxt};
@@ -119,7 +119,7 @@ fn collect_raw_ptrs_escape_to_global<'tcx>(
                 None
             }
         })
-        .flat_map(|(ptr, ptes)| ptes.iter().map(|pte| (pte, *ptr)))
+        .flat_map(|(ptr, ptes)| ptes.iter().map(|pte| (pte, ptr.clone())))
         .filter_map(|(pte, ptr)| match pte {
             ConstraintNode::Alloc(place)
                 if place.local < local_end && place.ty(body, tcx).ty.is_unsafe_ptr() =>

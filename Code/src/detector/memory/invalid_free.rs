@@ -17,7 +17,7 @@ use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_index::bit_set::BitSet;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{BasicBlock, Body, Location, Place, TerminatorKind};
-use rustc_middle::ty::{self, Instance, Ty, TyCtxt};
+use rustc_middle::ty::{self, EarlyBinder, Instance, Ty, TyCtxt};
 
 use petgraph::visit::IntoNodeReferences;
 
@@ -261,7 +261,11 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
     }
 
     fn monomorphize(&self, instance: &Instance<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
-        instance.subst_mir_and_normalize_erasing_regions(self.tcx, ty::ParamEnv::reveal_all(), ty)
+        instance.instantiate_mir_and_normalize_erasing_regions(
+            self.tcx,
+            ty::ParamEnv::reveal_all(),
+            EarlyBinder::bind(ty),
+        )
     }
 
     /// Detect mem::uninitialized()

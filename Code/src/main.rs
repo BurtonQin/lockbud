@@ -17,12 +17,13 @@ mod options;
 use log::debug;
 use options::Options;
 use rustc_session::config::ErrorOutputType;
-use rustc_session::early_error;
+use rustc_session::EarlyErrorHandler;
 
 fn main() {
     // Initialize loggers.
+    let handler = EarlyErrorHandler::new(ErrorOutputType::default());
     if std::env::var("RUSTC_LOG").is_ok() {
-        rustc_driver::init_rustc_env_logger();
+        rustc_driver::init_rustc_env_logger(&handler);
     }
     if std::env::var("LOCKBUD_LOG").is_ok() {
         let e = env_logger::Env::new()
@@ -38,10 +39,7 @@ fn main() {
         .enumerate()
         .map(|(i, arg)| {
             arg.into_string().unwrap_or_else(|arg| {
-                early_error(
-                    ErrorOutputType::default(),
-                    &format!("Argument {} is not valid Unicode: {:?}", i, arg),
-                )
+                handler.early_error(format!("Argument {} is not valid Unicode: {:?}", i, arg))
             })
         })
         .collect::<Vec<_>>();
@@ -54,7 +52,7 @@ fn main() {
     }
 
     let mut rustc_command_line_arguments: Vec<String> = args[1..].into();
-    rustc_driver::install_ice_hook();
+    rustc_driver::install_ice_hook("ice ice ice baby", |_| ());
     let result = rustc_driver::catch_fatal_errors(|| {
         // Add back the binary name
         rustc_command_line_arguments.insert(0, args[0].clone());

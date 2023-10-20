@@ -15,7 +15,7 @@ extern crate rustc_middle;
 use std::collections::VecDeque;
 
 use rustc_data_structures::fx::FxHashSet;
-use rustc_index::vec::IndexVec;
+use rustc_index::IndexVec;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Local, Location, Place, Rvalue};
 

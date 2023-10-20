@@ -71,7 +71,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             // No need to analyze a build script, but do generate code.
             return Compilation::Continue;
         }
-        queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
+        queries.global_ctxt().unwrap().enter(|tcx| {
             self.analyze_with_lockbud(compiler, tcx);
         });
         if self.test_run {

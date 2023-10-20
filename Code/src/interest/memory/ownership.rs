@@ -2,10 +2,16 @@ extern crate rustc_hir;
 extern crate rustc_middle;
 
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::{SubstsRef, TyCtxt};
+use rustc_middle::ty::TyCtxt;
+
+use rustc_middle::ty::{GenericArg, List};
 
 /// y = Arc::clone(x)
-pub fn is_arc_or_rc_clone<'tcx>(def_id: DefId, substs: SubstsRef<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
+pub fn is_arc_or_rc_clone<'tcx>(
+    def_id: DefId,
+    substs: &List<GenericArg<'tcx>>,
+    tcx: TyCtxt<'tcx>,
+) -> bool {
     let fn_name = tcx.def_path_str(def_id);
     if fn_name != "std::clone::Clone::clone" {
         return false;

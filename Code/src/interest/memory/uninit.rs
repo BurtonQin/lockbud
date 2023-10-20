@@ -54,7 +54,7 @@ pub enum UninitApi {
 
 impl UninitApi {
     pub fn from_instance<'tcx>(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let path = tcx.def_path_str_with_substs(instance.def_id(), instance.substs);
+        let path = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
         Self::from_str(&path)
     }
 

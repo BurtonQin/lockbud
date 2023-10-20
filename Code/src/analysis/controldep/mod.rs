@@ -5,7 +5,8 @@ extern crate rustc_middle;
 use std::collections::VecDeque;
 
 use rustc_data_structures::fx::FxHashSet;
-use rustc_index::vec::{Idx, IndexVec};
+use rustc_index::Idx;
+use rustc_index::IndexVec;
 use rustc_middle::mir::{BasicBlock, Location};
 
 use crate::analysis::postdom::{post_dominators, EndsControlFlowGraph};

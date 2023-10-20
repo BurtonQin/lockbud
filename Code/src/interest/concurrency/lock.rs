@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use rustc_hash::FxHashMap;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::{Body, Local, Location, TerminatorKind};
+use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{self, Instance, ParamEnv, TyCtxt};
 use rustc_span::Span;
 
@@ -76,7 +77,7 @@ impl<'tcx> LockGuardTy<'tcx> {
         // parking_lot: MutexGuard<RawMutex, i32>
         // async, tokio, future: currently Unsupported
         if let ty::TyKind::Adt(adt_def, substs) = local_ty.kind() {
-            let path = tcx.def_path_str_with_substs(adt_def.did(), substs);
+            let path = tcx.def_path_str_with_args(adt_def.did(), &*substs);
             // quick fail
             if !path.contains("MutexGuard")
                 && !path.contains("RwLockReadGuard")
@@ -243,10 +244,10 @@ impl<'a, 'b, 'tcx> LockGuardCollector<'a, 'b, 'tcx> {
 
     pub fn analyze(&mut self) {
         for (local, local_decl) in self.body.local_decls.iter_enumerated() {
-            let local_ty = self.instance.subst_mir_and_normalize_erasing_regions(
+            let local_ty = self.instance.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
                 self.param_env,
-                local_decl.ty,
+                EarlyBinder::bind(local_decl.ty),
             );
             if let Some(lockguard_ty) = LockGuardTy::from_local_ty(local_ty, self.tcx) {
                 let lockguard_id = LockGuardId::new(self.instance_id, local);
@@ -281,10 +282,10 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
                                 let func_ty = func.ty(self.body, self.tcx);
                                 // Only after monomorphizing can Instance::resolve work
                                 let func_ty =
-                                    self.instance.subst_mir_and_normalize_erasing_regions(
+                                    self.instance.instantiate_mir_and_normalize_erasing_regions(
                                         self.tcx,
                                         self.param_env,
-                                        func_ty,
+                                        EarlyBinder::bind(func_ty),
                                     );
                                 if let ty::FnDef(def_id, _) = *func_ty.kind() {
                                     let fn_name = self.tcx.def_path_str(def_id);

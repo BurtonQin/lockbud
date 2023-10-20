@@ -6,7 +6,7 @@ extern crate rustc_middle;
 use rustc_data_structures::graph::{
     ControlFlowGraph, DirectedGraph, WithNumNodes, WithPredecessors, WithSuccessors,
 };
-use rustc_index::vec::{Idx, IndexVec};
+use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir::{BasicBlock, BasicBlocks, Location, TerminatorKind};
 use std::borrow::BorrowMut;
 

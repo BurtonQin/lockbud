@@ -41,7 +41,7 @@ fn collect_manual_drop<'tcx>(
     let mut manual_drops: FxHashMap<InstanceId, Vec<_>> = FxHashMap::default();
     for (callee_id, node) in callgraph.graph.node_references() {
         let instance = node.instance();
-        let path = tcx.def_path_str_with_substs(instance.def_id(), instance.substs);
+        let path = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
         if !path.starts_with("std::mem::drop") && !path.starts_with("core::mem::drop") {
             continue;
         }

@@ -14,7 +14,7 @@ pub enum CondvarApi {
 
 impl CondvarApi {
     pub fn from_instance<'tcx>(instance: &Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let path = tcx.def_path_str_with_substs(instance.def_id(), instance.substs);
+        let path = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
         let std_condvar = "std::sync::Condvar::";
         let parking_lot_condvar = "parking_lot::Condvar::";
         if path.starts_with(std_condvar) {

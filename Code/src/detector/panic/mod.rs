@@ -1,11 +1,12 @@
-extern crate rustc_span;
 extern crate rustc_hir;
+extern crate rustc_span;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Location, Terminator, TerminatorKind, OUTERMOST_SOURCE_SCOPE};
+use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{self, TyCtxt, TyKind};
 use rustc_middle::ty::{Instance, InstanceDef};
 use rustc_span::Span;
@@ -77,7 +78,7 @@ pub enum PanicInstance<'tcx> {
 
 impl<'tcx> PanicInstance<'tcx> {
     fn new(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let def_path_str = tcx.def_path_str_with_substs(instance.def_id(), instance.substs);
+        let def_path_str = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
         if PANIC_API_REGEX[&PanicAPI::ResultUnwrap].is_match(&def_path_str) {
             Some(PanicInstance::ResultUnwrap(instance))
         } else if PANIC_API_REGEX[&PanicAPI::ResultExpect].is_match(&def_path_str) {
@@ -182,10 +183,10 @@ impl<'tcx> Visitor<'tcx> for PanicFinder<'tcx> {
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if let TerminatorKind::Call { ref func, .. } = terminator.kind {
             let func_ty = func.ty(self.body, self.tcx);
-            let func_ty = self.instance.subst_mir_and_normalize_erasing_regions(
+            let func_ty = self.instance.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
                 ty::ParamEnv::reveal_all(),
-                func_ty,
+                EarlyBinder::bind(func_ty),
             );
             if let TyKind::FnDef(def_id, subst_ref) = func_ty.kind() {
                 if let Some(callee_instance) =
