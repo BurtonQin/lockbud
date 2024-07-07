@@ -57,7 +57,7 @@ pub enum AtomicApi {
 
 impl AtomicApi {
     pub fn from_instance<'tcx>(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let path = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
+        let path = tcx.def_path_str_with_args(instance.def_id(), instance.args);
         if ATOMIC_API_REGEX["AtomicRead"].is_match(&path) {
             Some(AtomicApi::Read)
         } else if ATOMIC_API_REGEX["AtomicWrite"].is_match(&path) {
@@ -80,7 +80,7 @@ pub fn is_atomic_ptr_store<'tcx>(
     substs: &'tcx List<GenericArg<'tcx>>,
     tcx: TyCtxt<'tcx>,
 ) -> bool {
-    let path = tcx.def_path_str_with_args(def_id, &*substs);
+    let path = tcx.def_path_str_with_args(def_id, substs);
     ATOMIC_PTR_STORE.is_match(&path)
 }
 

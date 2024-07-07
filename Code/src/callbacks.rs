@@ -42,7 +42,11 @@ impl LockBudCallbacks {
 
 impl rustc_driver::Callbacks for LockBudCallbacks {
     fn config(&mut self, config: &mut rustc_interface::interface::Config) {
-        self.file_name = config.input.source_name().prefer_remapped().to_string();
+        self.file_name = config
+            .input
+            .source_name()
+            .prefer_remapped_unconditionaly()
+            .to_string();
         debug!("Processing input file: {}", self.file_name);
         if config.opts.test {
             debug!("in test only mode");
@@ -61,7 +65,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
         compiler: &rustc_interface::interface::Compiler,
         queries: &'tcx rustc_interface::Queries<'tcx>,
     ) -> rustc_driver::Compilation {
-        compiler.session().abort_if_errors();
+        compiler.sess.dcx().abort_if_errors();
         if self
             .output_directory
             .to_str()
@@ -148,7 +152,7 @@ impl LockBudCallbacks {
                     let use_after_free_detector = UseAfterFreeDetector::new(tcx);
                     use_after_free_detector.detect(&callgraph, &mut alias_analysis)
                 };
-                reports.extend(reports2.into_iter());
+                reports.extend(reports2);
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
@@ -166,26 +170,16 @@ impl LockBudCallbacks {
                 {
                     let mut atomicity_violation_detector = AtomicityViolationDetector::new(tcx);
                     reports.extend(
-                        atomicity_violation_detector
-                            .detect(&callgraph, &mut alias_analysis)
-                            .into_iter(),
+                        atomicity_violation_detector.detect(&callgraph, &mut alias_analysis),
                     );
                 }
                 {
                     let invalid_free_detector = InvalidFreeDetector::new(tcx);
-                    reports.extend(
-                        invalid_free_detector
-                            .detect(&callgraph, &mut alias_analysis)
-                            .into_iter(),
-                    );
+                    reports.extend(invalid_free_detector.detect(&callgraph, &mut alias_analysis));
                 }
                 {
                     let use_after_free_detector = UseAfterFreeDetector::new(tcx);
-                    reports.extend(
-                        use_after_free_detector
-                            .detect(&callgraph, &mut alias_analysis)
-                            .into_iter(),
-                    );
+                    reports.extend(use_after_free_detector.detect(&callgraph, &mut alias_analysis));
                 }
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();

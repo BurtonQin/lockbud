@@ -78,7 +78,7 @@ pub enum PanicInstance<'tcx> {
 
 impl<'tcx> PanicInstance<'tcx> {
     fn new(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let def_path_str = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
+        let def_path_str = tcx.def_path_str_with_args(instance.def_id(), instance.args);
         if PANIC_API_REGEX[&PanicAPI::ResultUnwrap].is_match(&def_path_str) {
             Some(PanicInstance::ResultUnwrap(instance))
         } else if PANIC_API_REGEX[&PanicAPI::ResultExpect].is_match(&def_path_str) {
@@ -125,7 +125,7 @@ impl<'tcx> PanicDetector<'tcx> {
     }
     pub fn detect(&mut self, instance: Instance<'tcx>) {
         if let Some(mut panic_finder) = PanicFinder::new(instance, self.tcx) {
-            self.result.extend(panic_finder.detect().into_iter());
+            self.result.extend(panic_finder.detect());
         }
     }
     pub fn result(&self) -> &HashMap<(DefId, Location), (Span, Span, PanicInstance<'tcx>)> {
@@ -133,9 +133,9 @@ impl<'tcx> PanicDetector<'tcx> {
     }
     pub fn statistics(&self) -> HashMap<PanicAPI, usize> {
         let mut tally: HashMap<PanicAPI, usize> = HashMap::new();
-        for (_, (_, _, panic_instance)) in &self.result {
+        self.result.iter().for_each(|(_, (_, _, panic_instance))| {
             *tally.entry(panic_instance.to_panic_api()).or_default() += 1;
-        }
+        });
         tally
     }
 }

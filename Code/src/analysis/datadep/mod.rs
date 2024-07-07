@@ -20,7 +20,7 @@ use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Local, Location, Place, Rvalue};
 
 pub fn all_data_dep_on(a: Local, data_deps: &DataDeps) -> FxHashSet<Local> {
-    let mut worklist = VecDeque::from_iter(data_deps.immediate_dep(a).into_iter());
+    let mut worklist = VecDeque::from_iter(data_deps.immediate_dep(a));
     let mut visited = FxHashSet::default();
     while let Some(n) = worklist.pop_front() {
         if !visited.insert(n) {
@@ -65,8 +65,7 @@ impl<'tcx> Visitor<'tcx> for DataDeps {
                     self.immediate_deps[rhs.local][lhs] = true;
                 }
             }
-            Rvalue::BinaryOp(_, box (rhs0, rhs1))
-            | Rvalue::CheckedBinaryOp(_, box (rhs0, rhs1)) => {
+            Rvalue::BinaryOp(_, box (rhs0, rhs1)) => {
                 if let Some(rhs0) = rhs0.place() {
                     self.immediate_deps[rhs0.local][lhs] = true;
                 }

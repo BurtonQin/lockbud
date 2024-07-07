@@ -337,10 +337,10 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
     }
 }
 
-fn find_path_recursive<'tcx>(
+fn find_path_recursive(
     u: BasicBlock,
     d: BasicBlock,
-    body: &Body<'tcx>,
+    body: &Body<'_>,
     path: &mut Vec<BasicBlock>,
     visited: &mut BitSet<BasicBlock>,
     paths: &mut Vec<Vec<BasicBlock>>,

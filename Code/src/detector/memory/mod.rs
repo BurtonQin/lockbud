@@ -28,7 +28,7 @@ fn dest_args0<'tcx>(
         ..
     } = &body[loc.block].terminator().kind
     {
-        let args0 = args.get(0).and_then(|op| op.place());
+        let args0 = args.first().and_then(|op| op.node.place());
         return Some((*destination, args0));
     }
     None
@@ -41,7 +41,7 @@ fn collect_manual_drop<'tcx>(
     let mut manual_drops: FxHashMap<InstanceId, Vec<_>> = FxHashMap::default();
     for (callee_id, node) in callgraph.graph.node_references() {
         let instance = node.instance();
-        let path = tcx.def_path_str_with_args(instance.def_id(), &*instance.args);
+        let path = tcx.def_path_str_with_args(instance.def_id(), instance.args);
         if !path.starts_with("std::mem::drop") && !path.starts_with("core::mem::drop") {
             continue;
         }

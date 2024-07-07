@@ -17,11 +17,11 @@ mod options;
 use log::debug;
 use options::Options;
 use rustc_session::config::ErrorOutputType;
-use rustc_session::EarlyErrorHandler;
+use rustc_session::EarlyDiagCtxt;
 
 fn main() {
     // Initialize loggers.
-    let handler = EarlyErrorHandler::new(ErrorOutputType::default());
+    let handler = EarlyDiagCtxt::new(ErrorOutputType::default());
     if std::env::var("RUSTC_LOG").is_ok() {
         rustc_driver::init_rustc_env_logger(&handler);
     }
@@ -39,7 +39,9 @@ fn main() {
         .enumerate()
         .map(|(i, arg)| {
             arg.into_string().unwrap_or_else(|arg| {
-                handler.early_error(format!("Argument {} is not valid Unicode: {:?}", i, arg))
+                handler.early_fatal(
+                    format!("Argument {} is not valid Unicode: {:?}", i, arg).to_string(),
+                )
             })
         })
         .collect::<Vec<_>>();
@@ -53,7 +55,7 @@ fn main() {
 
     let mut rustc_command_line_arguments: Vec<String> = args[1..].into();
     rustc_driver::install_ice_hook("ice ice ice baby", |_| ());
-    let result = rustc_driver::catch_fatal_errors(|| {
+    let exit_code = rustc_driver::catch_with_exit_code(|| {
         // Add back the binary name
         rustc_command_line_arguments.insert(0, args[0].clone());
 
@@ -97,12 +99,7 @@ fn main() {
         let compiler =
             rustc_driver::RunCompiler::new(&rustc_command_line_arguments, &mut callbacks);
         compiler.run()
-    })
-    .and_then(|result| result);
-    let exit_code = match result {
-        Ok(_) => rustc_driver::EXIT_SUCCESS,
-        Err(_) => rustc_driver::EXIT_FAILURE,
-    };
+    });
     std::process::exit(exit_code);
 }
 

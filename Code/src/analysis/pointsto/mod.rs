@@ -76,9 +76,9 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
                     graph.add_alloc(place);
                 }
                 ConstraintNode::Constant(ref constant) => {
-                    graph.add_constant(constant.clone());
+                    graph.add_constant(*constant);
                     // For constant C, track *C.
-                    worklist.push_back(ConstraintNode::ConstantDeref(constant.clone()));
+                    worklist.push_back(ConstraintNode::ConstantDeref(*constant));
                 }
                 _ => {}
             }
@@ -135,7 +135,7 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
         let old_len = self.pts.get(target).unwrap().len();
         let source_pts = self.pts.get(source).unwrap().clone();
         let target_pts = self.pts.get_mut(target).unwrap();
-        target_pts.extend(source_pts.into_iter());
+        target_pts.extend(source_pts);
         old_len != target_pts.len()
     }
 
@@ -226,7 +226,7 @@ impl<'tcx> ConstraintGraph<'tcx> {
     }
 
     fn add_constant(&mut self, constant: ConstKind<'tcx>) {
-        let lhs = ConstraintNode::Constant(constant.clone());
+        let lhs = ConstraintNode::Constant(constant);
         let rhs = ConstraintNode::ConstantDeref(constant);
         let lhs = self.get_or_insert_node(lhs);
         let rhs = self.get_or_insert_node(rhs);
@@ -588,7 +588,14 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             ..
         } = &terminator.kind
         {
-            match (args.as_slice(), destination) {
+            match (
+                args.as_slice()
+                    .iter()
+                    .map(|x| x.node.clone())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                destination,
+            ) {
                 (&[Operand::Move(arg)], dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
@@ -931,7 +938,7 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         // 3. Check if `node1` and `node2` point to upvars of closures and the upvars alias in the def func.
         // 3.1 Get defsite upvars of `node1` then check if `node2` points to the upvar.
         let mut defsite_upvars1 = None;
-        if self.tcx.is_closure(instance1.def_id()) {
+        if self.tcx.is_closure_like(instance1.def_id()) {
             let pts_paths = points_to_paths_to_param(node1.clone(), body1, &points_to_map1);
             for pts_path in pts_paths {
                 let defsite_upvars = match self.closure_defsite_upvars(instance1, pts_path) {
@@ -956,7 +963,7 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         }
         // 3.2 Get defsite upvars of `node2` then check if `node1` points to the upvar.
         let mut defsite_upvars2 = None;
-        if self.tcx.is_closure(instance2.def_id()) {
+        if self.tcx.is_closure_like(instance2.def_id()) {
             let pts_paths = points_to_paths_to_param(node2.clone(), body2, &points_to_map2);
             for pts_path in pts_paths {
                 let defsite_upvars = match self.closure_defsite_upvars(instance2, pts_path) {
@@ -1126,10 +1133,10 @@ type PointsToPath<'tcx> = Vec<(&'tcx [PlaceElem<'tcx>], ConstraintNode<'tcx>)>;
 /// Due to the above reason, pts(_8) does not contain _1.1 and fails to be identified as an upvar.
 /// Thus we need to track the pts-to paths from the given node to the parameter.
 /// If there exists such a path, then the node is an upvar.
-fn points_to_paths_to_param<'a, 'tcx>(
+fn points_to_paths_to_param<'tcx>(
     node: ConstraintNode<'tcx>,
     body: &'tcx Body<'tcx>,
-    points_to_map: &'a PointsToMap<'tcx>,
+    points_to_map: &PointsToMap<'tcx>,
 ) -> Vec<PointsToPath<'tcx>> {
     let mut result = Vec::new();
     let mut path = Vec::new();
@@ -1147,11 +1154,11 @@ fn points_to_paths_to_param<'a, 'tcx>(
 }
 
 /// DFS search for points-to paths from `node` to the parameter.
-fn dfs_paths_recur<'a, 'tcx>(
+fn dfs_paths_recur<'tcx>(
     prev_proj: &'tcx [PlaceElem<'tcx>],
     node: ConstraintNode<'tcx>,
     body: &'tcx Body<'tcx>,
-    points_to_map: &'a PointsToMap<'tcx>,
+    points_to_map: &PointsToMap<'tcx>,
     visited: &mut FxHashSet<ConstraintNode<'tcx>>,
     path: &mut PointsToPath<'tcx>,
     result: &mut Vec<PointsToPath<'tcx>>,

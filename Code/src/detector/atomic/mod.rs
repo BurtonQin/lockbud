@@ -187,8 +187,8 @@ fn first_arg_and_dest<'tcx>(
         ..
     } = &body[location.block].terminator().kind
     {
-        args.get(0)
-            .and_then(|arg| arg.place())
+        args.first()
+            .and_then(|arg| arg.node.place())
             .map(|place| (place, *destination))
     } else {
         None
@@ -203,8 +203,8 @@ fn first_two_args<'tcx>(
         func: _func, args, ..
     } = &body[location.block].terminator().kind
     {
-        let place0 = args.get(0)?.place()?;
-        let place1 = args.get(1).and_then(|arg1| arg1.place());
+        let place0 = args.first()?.node.place()?;
+        let place1 = args.get(1).and_then(|arg1| arg1.node.place());
         Some((place0, place1))
     } else {
         None

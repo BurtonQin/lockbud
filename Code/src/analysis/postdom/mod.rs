@@ -3,9 +3,7 @@ extern crate rustc_data_structures;
 extern crate rustc_index;
 extern crate rustc_middle;
 
-use rustc_data_structures::graph::{
-    ControlFlowGraph, DirectedGraph, WithNumNodes, WithPredecessors, WithSuccessors,
-};
+use rustc_data_structures::graph::{ControlFlowGraph, DirectedGraph, Predecessors, Successors};
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir::{BasicBlock, BasicBlocks, Location, TerminatorKind};
 use std::borrow::BorrowMut;
@@ -66,9 +64,7 @@ pub fn post_dominators<G: EndsControlFlowGraph>(graph: G) -> PostDominators<G::N
     post_dominators_given_rpo(graph, &rpo)
 }
 
-pub fn postdom_reverse_post_order<
-    G: DirectedGraph + WithPredecessors + WithNumNodes + WithEndNodes,
->(
+pub fn postdom_reverse_post_order<G: DirectedGraph + Predecessors + WithEndNodes>(
     graph: &G,
     end_nodes: Vec<G::Node>,
 ) -> Vec<G::Node> {
@@ -77,18 +73,14 @@ pub fn postdom_reverse_post_order<
     vec
 }
 
-pub fn postdom_post_order_from<
-    G: DirectedGraph + WithPredecessors + WithNumNodes + WithEndNodes,
->(
+pub fn postdom_post_order_from<G: DirectedGraph + Predecessors + WithEndNodes>(
     graph: &G,
     end_nodes: Vec<G::Node>,
 ) -> Vec<G::Node> {
     postdom_post_order_from_to(graph, end_nodes, None)
 }
 
-pub fn postdom_post_order_from_to<
-    G: DirectedGraph + WithPredecessors + WithNumNodes + WithEndNodes,
->(
+pub fn postdom_post_order_from_to<G: DirectedGraph + Predecessors + WithEndNodes>(
     graph: &G,
     end_nodes: Vec<G::Node>,
     start_node: Option<G::Node>,
@@ -104,7 +96,7 @@ pub fn postdom_post_order_from_to<
     result
 }
 
-fn postdom_post_order_walk<G: DirectedGraph + WithPredecessors + WithNumNodes>(
+fn postdom_post_order_walk<G: DirectedGraph + Predecessors>(
     graph: &G,
     node: G::Node,
     result: &mut Vec<G::Node>,

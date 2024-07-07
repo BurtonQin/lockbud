@@ -77,7 +77,7 @@ impl<'tcx> LockGuardTy<'tcx> {
         // parking_lot: MutexGuard<RawMutex, i32>
         // async, tokio, future: currently Unsupported
         if let ty::TyKind::Adt(adt_def, substs) = local_ty.kind() {
-            let path = tcx.def_path_str_with_args(adt_def.did(), &*substs);
+            let path = tcx.def_path_str_with_args(adt_def.did(), substs);
             // quick fail
             if !path.contains("MutexGuard")
                 && !path.contains("RwLockReadGuard")

@@ -1,6 +1,7 @@
 //! DeadlockDetector: detects doublelock and conflictlock.
 extern crate rustc_data_structures;
 extern crate rustc_hash;
+extern crate rustc_span;
 
 pub mod report;
 use super::report::{Report, ReportContent};
@@ -49,7 +50,7 @@ impl LiveLockGuards {
     // self = self U other, if changed return true
     fn union_in_place(&mut self, other: Self) -> bool {
         let old_len = self.0.len();
-        self.0.extend(other.0.into_iter());
+        self.0.extend(other.0);
         old_len != self.0.len()
     }
 }
@@ -202,16 +203,13 @@ impl<'tcx> DeadlockDetector<'tcx> {
 
         let mut reports = self.detect_deadlock(&info, callgraph, alias_analysis);
         if !lockguards_before_condvar_apis.is_empty() {
-            reports.extend(
-                self.detect_condvar_misuse(
-                    &lockguards_before_condvar_apis,
-                    &condvar_apis,
-                    &info,
-                    callgraph,
-                    alias_analysis,
-                )
-                .into_iter(),
-            );
+            reports.extend(self.detect_condvar_misuse(
+                &lockguards_before_condvar_apis,
+                &condvar_apis,
+                &info,
+                callgraph,
+                alias_analysis,
+            ));
         }
         reports
     }
@@ -267,7 +265,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 match condvar_api {
                     CondvarApi::Std(StdCondvarApi::Wait(_)) => {
                         if let (Operand::Move(condvar_ref), Operand::Move(mutex_guard)) =
-                            (&args[0], &args[1])
+                            (&args[0].node, &args[1].node)
                         {
                             // callsite -> (&Condvar, MutexGuard)
                             std_wait.insert(
@@ -287,7 +285,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     }
                     CondvarApi::ParkingLot(ParkingLotCondvarApi::Wait(_)) => {
                         if let (Operand::Move(condvar_ref), Operand::Move(mutex_guard_ref)) =
-                            (&args[0], &args[1])
+                            (&args[0].node, &args[1].node)
                         {
                             // callsite -> (&Condvar, &mut MutexGuard)
                             parking_lot_wait.insert(
@@ -306,7 +304,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                         }
                     }
                     CondvarApi::Std(StdCondvarApi::Notify(_)) => {
-                        if let Operand::Move(condvar_ref) = args[0] {
+                        if let Operand::Move(condvar_ref) = args[0].node {
                             // callsite -> &Condvar
                             std_notify.insert(
                                 (*caller_id, *loc, *callee_id),
@@ -318,7 +316,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                         }
                     }
                     CondvarApi::ParkingLot(ParkingLotCondvarApi::Notify(_)) => {
-                        if let Operand::Move(condvar_ref) = args[0] {
+                        if let Operand::Move(condvar_ref) = args[0].node {
                             // callsite -> &Condvar
                             parking_lot_notify.insert(
                                 (*caller_id, *loc, *callee_id),
@@ -675,10 +673,10 @@ enum NotDeadlockReason {
 /// Check deadlock possibility.
 /// for two lockguards, first check if their types may deadlock;
 /// if so, then check if they may alias.
-fn deadlock_possibility<'tcx>(
+fn deadlock_possibility(
     a: &LockGuardId,
     b: &LockGuardId,
-    lockguards: &LockGuardMap<'tcx>,
+    lockguards: &LockGuardMap<'_>,
     alias_analysis: &mut AliasAnalysis,
 ) -> (DeadlockPossibility, NotDeadlockReason) {
     let a_ty = &lockguards[a].lockguard_ty;
@@ -916,7 +914,7 @@ impl ConflictLockGraph {
                 // Thus we use `edge_sets` to deduplicate the cycle paths.
                 let set = path
                     .iter()
-                    .zip(path.iter().skip(1).chain(path.get(0)))
+                    .zip(path.iter().skip(1).chain(path.first()))
                     .map(|(a, b)| (*a, *b))
                     .collect::<FxHashSet<_>>();
                 if !edge_sets.contains(&set) {
