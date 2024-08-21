@@ -41,12 +41,12 @@ static PANIC_API_REGEX: Lazy<HashMap<PanicAPI, Regex>> = Lazy::new(|| {
         PanicAPI::OptionExpect,
         Regex::new(r"Option::<.+>::expect").unwrap(),
     );
-    m.insert(PanicAPI::PanicFmt, Regex::new(r"panic_fmt").unwrap());
+    m.insert(PanicAPI::PanicFmt, Regex::new(r"rt::panic_fmt").unwrap());
     m.insert(
         PanicAPI::AssertFailed,
-        Regex::new(r"assert_failed").unwrap(),
+        Regex::new(r"panicking::assert_failed").unwrap(),
     );
-    m.insert(PanicAPI::Panic, Regex::new(r"panic").unwrap());
+    m.insert(PanicAPI::Panic, Regex::new(r"panicking::panic").unwrap());
     m
 });
 
@@ -62,6 +62,7 @@ mod tests {
         assert!(PANIC_API_REGEX[&PanicAPI::PanicFmt].is_match("core::panicking::panic_fmt"));
         assert!(PANIC_API_REGEX[&PanicAPI::AssertFailed].is_match("core::panicking::assert_failed"));
         assert!(PANIC_API_REGEX[&PanicAPI::Panic].is_match("core::panicking::panic"));
+        assert!(!PANIC_API_REGEX[&PanicAPI::Panic].is_match("no_panic"));
     }
 }
 

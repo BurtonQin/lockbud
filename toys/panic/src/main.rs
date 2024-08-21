@@ -17,9 +17,14 @@ fn expect_panic() {
     let _b = a.expect("Expect panic!");
 }
 
+fn no_panic_fp() {
+    println!("...");
+}
+
 fn main() {
     panic_macro();
     assert_panic();
     unwrap_panic();
     expect_panic();
+    no_panic_fp();
 }
