@@ -52,17 +52,15 @@ fn in_cargo_lockbud() {
     cmd.env("RUSTC_WRAPPER", "lockbud");
     cmd.env("RUST_BACKTRACE", "full");
     cmd.env("LOCKBUD_LOG", "info");
-    let args = std::env::args().skip(2);
-    let mut flags = Vec::new();
-    for arg in args {
-        if arg == "--" {
-            break;
-        }
-        flags.push(arg);
-    }
+
+    let mut args = std::env::args().skip(2);
+
+    let flags: Vec<_> = args.by_ref().take_while(|arg| arg != "--").collect();
     let flags = flags.join(" ");
     cmd.env("LOCKBUD_FLAGS", flags);
+
     let exit_status = cmd
+        .args(args)
         .spawn()
         .expect("could not run cargo")
         .wait()
