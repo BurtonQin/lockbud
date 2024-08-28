@@ -8,7 +8,7 @@ use std::process::Command;
 
 const CARGO_LOCKBUD_HELP: &str = r#"Statically detect bugs on MIR
 Usage:
-    cargo lockbud [options] [<cargo options>...] [--] [<program/test suite options>...]
+    cargo lockbud [options] [--] [<cargo build options>...]
 Common options:
     -h, --help               Print this message
     -V, --version            Print version info and exit
@@ -16,13 +16,15 @@ Common options:
     -b, --blacklist-mode     Use crate-name-list as blacklist, whitelist if not specified
     -l, --crate-name-list    Will not white-or-black list the crates if not specified.
     
-Other [options] are the same as `cargo build`. Everything after the second "--" verbatim
-to the program.
+Options after the first "--" are the same arguments that `cargo build` accepts.
+
 Examples:
     # only detect [mycrate1, mycrate2]
     cargo lockbud -k deadlock -l mycrate1,mycrate2
     # skip detecting [mycrate1, mycrate2]
     cargo lockbud -k deadlock -b -l mycrate1,mycrate2
+    # canonical command with toolchain overridden and target triple specified
+    cargo +nightly-2024-05-21 lockbud -k all -- --target riscv64gc-unknown-none-elf
 "#;
 
 fn show_help() {
@@ -51,7 +53,11 @@ fn in_cargo_lockbud() {
     cmd.arg("build");
     cmd.env("RUSTC_WRAPPER", "lockbud");
     cmd.env("RUST_BACKTRACE", "full");
-    cmd.env("LOCKBUD_LOG", "info");
+
+    // Pass LOCKBUD_LOG if specified by the user. Default to info if not specified.
+    const LOCKBUD_LOG: &str = "LOCKBUD_LOG";
+    let log_level = env::var(LOCKBUD_LOG).ok();
+    cmd.env(LOCKBUD_LOG, log_level.as_deref().unwrap_or("info"));
 
     let mut args = std::env::args().skip(2);
 
