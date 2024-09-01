@@ -596,7 +596,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                     .as_slice(),
                 destination,
             ) {
-                (&[Operand::Move(arg)], dest) => {
+                (&[Operand::Move(arg)], dest) | (&[Operand::Copy(arg)], dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
                         if ownership::is_arc_or_rc_clone(*def_id, substs, self.tcx)
@@ -617,7 +617,8 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                         }
                     }
                 }
-                (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest) => {
+                (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest)
+                | (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Copy(_arg2)], _dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, list) = func_ty.kind() {
                         if is_atomic_ptr_store(*def_id, list, self.tcx) {
