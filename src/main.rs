@@ -39,9 +39,7 @@ fn main() {
         .enumerate()
         .map(|(i, arg)| {
             arg.into_string().unwrap_or_else(|arg| {
-                handler.early_fatal(
-                    format!("Argument {i} is not valid Unicode: {arg:?}")
-                )
+                handler.early_fatal(format!("Argument {i} is not valid Unicode: {arg:?}"))
             })
         })
         .collect::<Vec<_>>();

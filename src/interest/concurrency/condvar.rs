@@ -65,6 +65,7 @@ impl CondvarApi {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub enum StdCondvarApi {
     Wait(StdWait),
@@ -86,6 +87,7 @@ pub enum StdNotify {
     NotifyOne,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub enum ParkingLotCondvarApi {
     Wait(ParkingLotWait),
