@@ -12,7 +12,7 @@ RUN cargo vendor > .cargo/config
 
 COPY src /opt/lockbud/src
 
-ARG RUST_VERSION=nightly-2023-04-11
+ARG RUST_VERSION=nightly-2024-05-21
 
 RUN cd /opt/lockbud/ && \
     rustup default ${RUST_VERSION} && \
@@ -25,7 +25,7 @@ RUN cd /opt/lockbud/ && \
 
 FROM rust:slim
 
-ARG RUST_VERSION=nightly-2023-04-11
+ARG RUST_VERSION=nightly-2024-05-21
 
 RUN rustup default ${RUST_VERSION}
 

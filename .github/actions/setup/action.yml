@@ -5,7 +5,7 @@ inputs:
   rust_version:
     required: false
     description: using rust-toolchain version
-    default: nightly-2023-04-11
+    default: nightly-2024-05-21
 runs:
   using: "composite"
   steps:

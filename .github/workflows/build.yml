@@ -9,7 +9,7 @@ on:
       - v*
 
 env:
-  RUST_VERSION: nightly-2023-04-11
+  RUST_VERSION: nightly-2024-05-21
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
