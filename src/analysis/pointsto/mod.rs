@@ -495,7 +495,7 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
                 vec![Self::process_operand(operand)]
             }
             // Regard `p = &*q` as `p = q`
-            Rvalue::Ref(_, _, place) | Rvalue::AddressOf(_, place) => match place.as_ref() {
+            Rvalue::Ref(_, _, place) | Rvalue::RawPtr(_, place) => match place.as_ref() {
                 PlaceRef {
                     local: l,
                     projection: [ProjectionElem::Deref, ref remain @ ..],
@@ -594,8 +594,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
         } = &terminator.kind
         {
             match (
-                args.as_slice()
-                    .iter()
+                args.iter()
                     .map(|x| x.node.clone())
                     .collect::<Vec<_>>()
                     .as_slice(),

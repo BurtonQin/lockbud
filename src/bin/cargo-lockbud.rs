@@ -24,7 +24,7 @@ Examples:
     # skip detecting [mycrate1, mycrate2]
     cargo lockbud -k deadlock -b -l mycrate1,mycrate2
     # canonical command with toolchain overridden and target triple specified
-    cargo +nightly-2024-05-21 lockbud -k all -- --target riscv64gc-unknown-none-elf
+    cargo +nightly-2024-10-05 lockbud -k all -- --target riscv64gc-unknown-none-elf
 "#;
 
 fn show_help() {

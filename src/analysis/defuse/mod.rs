@@ -59,8 +59,8 @@ pub fn categorize(context: PlaceContext) -> Option<DefUse> {
         PlaceContext::NonMutatingUse(NonMutatingUseContext::FakeBorrow) |
         PlaceContext::NonMutatingUse(NonMutatingUseContext::PlaceMention)|
 
-        PlaceContext::MutatingUse(MutatingUseContext::AddressOf) |
-        PlaceContext::NonMutatingUse(NonMutatingUseContext::AddressOf) |
+        PlaceContext::MutatingUse(MutatingUseContext::RawBorrow) |
+        PlaceContext::NonMutatingUse(NonMutatingUseContext::RawBorrow) |
         PlaceContext::NonMutatingUse(NonMutatingUseContext::Inspect) |
         PlaceContext::NonMutatingUse(NonMutatingUseContext::Copy) |
         PlaceContext::NonMutatingUse(NonMutatingUseContext::Move) |

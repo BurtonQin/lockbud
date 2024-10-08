@@ -8,7 +8,7 @@ use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Location, Terminator, TerminatorKind, OUTERMOST_SOURCE_SCOPE};
 use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{self, TyCtxt, TyKind};
-use rustc_middle::ty::{Instance, InstanceDef};
+use rustc_middle::ty::{Instance, InstanceKind};
 use rustc_span::Span;
 use std::collections::HashMap;
 
@@ -59,7 +59,7 @@ mod tests {
         assert!(PANIC_API_REGEX[&PanicAPI::ResultExpect].is_match("Result::<i32, String>::expect"));
         assert!(PANIC_API_REGEX[&PanicAPI::OptionUnwrap].is_match("Option::<i32>::unwrap"));
         assert!(PANIC_API_REGEX[&PanicAPI::OptionExpect].is_match("Option::<i32>::expect"));
-        assert!(PANIC_API_REGEX[&PanicAPI::PanicFmt].is_match("core::panicking::panic_fmt"));
+        assert!(PANIC_API_REGEX[&PanicAPI::PanicFmt].is_match("rt::panic_fmt"));
         assert!(PANIC_API_REGEX[&PanicAPI::AssertFailed].is_match("core::panicking::assert_failed"));
         assert!(PANIC_API_REGEX[&PanicAPI::Panic].is_match("core::panicking::panic"));
         assert!(!PANIC_API_REGEX[&PanicAPI::Panic].is_match("no_panic"));
@@ -191,7 +191,7 @@ impl<'tcx> Visitor<'tcx> for PanicFinder<'tcx> {
             );
             if let TyKind::FnDef(def_id, subst_ref) = func_ty.kind() {
                 if let Some(callee_instance) =
-                    Instance::resolve(self.tcx, ty::ParamEnv::reveal_all(), *def_id, subst_ref)
+                    Instance::try_resolve(self.tcx, ty::ParamEnv::reveal_all(), *def_id, subst_ref)
                         .ok()
                         .flatten()
                 {
@@ -205,7 +205,7 @@ impl<'tcx> Visitor<'tcx> for PanicFinder<'tcx> {
 }
 
 fn skip_detecting<'tcx>(instance: &Instance<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-    if let InstanceDef::Item(_) = instance.def {
+    if let InstanceKind::Item(_) = instance.def {
         !tcx.is_mir_available(instance.def_id())
     } else {
         true

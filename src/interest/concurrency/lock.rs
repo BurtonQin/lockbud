@@ -280,7 +280,7 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for LockGuardCollector<'a, 'b, 'tcx> {
                             let term = self.body[location.block].terminator();
                             if let TerminatorKind::Call { ref func, .. } = term.kind {
                                 let func_ty = func.ty(self.body, self.tcx);
-                                // Only after monomorphizing can Instance::resolve work
+                                // Only after monomorphizing can Instance::try_resolve work
                                 let func_ty =
                                     self.instance.instantiate_mir_and_normalize_erasing_regions(
                                         self.tcx,

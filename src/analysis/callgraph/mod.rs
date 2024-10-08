@@ -201,16 +201,17 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if let TerminatorKind::Call { ref func, .. } = terminator.kind {
             let func_ty = func.ty(self.body, self.tcx);
-            // Only after monomorphizing can Instance::resolve work
+            // Only after monomorphizing can Instance::try_resolve work
             let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
                 self.param_env,
                 EarlyBinder::bind(func_ty),
             );
             if let ty::FnDef(def_id, substs) = *func_ty.kind() {
-                if let Some(callee) = Instance::resolve(self.tcx, self.param_env, def_id, substs)
-                    .ok()
-                    .flatten()
+                if let Some(callee) =
+                    Instance::try_resolve(self.tcx, self.param_env, def_id, substs)
+                        .ok()
+                        .flatten()
                 {
                     self.callsites
                         .push((callee, CallSiteLocation::Direct(location)));
@@ -238,7 +239,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                 LocalKind::Arg | LocalKind::ReturnPointer => {}
                 _ => {
                     if let Some(callee_instance) =
-                        Instance::resolve(self.tcx, self.param_env, *def_id, substs)
+                        Instance::try_resolve(self.tcx, self.param_env, *def_id, substs)
                             .ok()
                             .flatten()
                     {
