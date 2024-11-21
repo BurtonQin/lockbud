@@ -17,8 +17,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{
-    Body, ConstOperand, Local, Location, Operand, Place, PlaceElem, PlaceRef, ProjectionElem,
-    Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+    AggregateKind, Body, ConstOperand, Local, Location, Operand, Place, PlaceElem, PlaceRef,
+    ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
 };
 
 use rustc_middle::mir::Const;
@@ -431,7 +431,23 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
     fn process_assignment(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         let lhs_pattern = Self::process_place(place.as_ref());
         let rhs_patterns = Self::process_rvalue(rvalue);
-
+        // TODO(boqin): check if mk_place_field work for all places.
+        // original closure impl:
+        //   _x = closure => _x[0], _x[1], ... are upvars. Inside the closure, I check if a local var aliases with the upvars.
+        // current closure impl:
+        //   _x = closure(def_id, args, fields) => fields[0], fields[1], ... are upvars
+        // For compatibility, I create new places: _x[0], _x[1], ...
+        // and add constraints for _x[0] = fields[0], _x[1] = fields[1], ...
+        // Note that creating new places with mk_place_field is a hack. I need to check it against large projects.
+        if let Rvalue::Aggregate(box AggregateKind::Closure(_def_id, _args), fields) = rvalue {
+            for (idx, operand) in fields.iter_enumerated() {
+                if let Some(rhs) = operand.place() {
+                    let op_ty = operand.ty(&self.body.local_decls, self.tcx);
+                    let lhs = self.tcx.mk_place_field(*place, idx, op_ty);
+                    self.graph.add_copy(lhs.as_ref(), rhs.as_ref());
+                }
+            }
+        }
         for rhs_pattern in rhs_patterns.into_iter() {
             match (&lhs_pattern, rhs_pattern) {
                 // a = &b
