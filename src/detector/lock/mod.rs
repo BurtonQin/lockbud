@@ -905,8 +905,13 @@ impl ConflictLockGraph {
         let mut dedup = Vec::new();
         let mut edge_sets = Vec::new();
         for (src, target) in self.back_edges() {
+            // FIXME(boqin): all_simple_paths may return infinitely many paths. I think this is a bug in petgraph.
+            // The issue is tracked in https://github.com/petgraph/petgraph/issues/680.
+            // Before a patch is available, I limit the path number with MAX_PATH_NUM = 100. I think 100 is enough for most cases.
+            const MAX_PATH_NUM: usize = 100;
             let cycle_paths =
                 algo::all_simple_paths::<Vec<_>, _>(&self.graph, target, src, 0, None)
+                    .take(MAX_PATH_NUM)
                     .collect::<Vec<_>>();
             for path in cycle_paths {
                 // `path` forms a cycle, where adjacent nodes are directly connected and last_node connects to first_node.
