@@ -573,7 +573,7 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
+impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
     fn visit_statement(&mut self, statement: &Statement<'tcx>, _location: Location) {
         match &statement.kind {
             StatementKind::Assign(box (place, rvalue)) => {
@@ -590,7 +590,8 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
             | StatementKind::Nop
             | StatementKind::PlaceMention(_)
             | StatementKind::ConstEvalCounter
-            | StatementKind::Intrinsic(_) => {}
+            | StatementKind::Intrinsic(_)
+            | StatementKind::BackwardIncompatibleDropHint { .. } => {}
         }
     }
 
@@ -633,7 +634,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                         if ownership::is_index(*def_id, self.tcx) {
                             // index(arg0, arg1)
                             // e.g., <String as Index<std::ops::Range<usize>>>::index(move _97, move _98)
-                            return self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
+                            self.process_call_arg_dest(arg.as_ref(), dest.as_ref())
                         }
                     }
                 }
@@ -643,7 +644,7 @@ impl<'a, 'tcx> Visitor<'tcx> for ConstraintGraphCollector<'a, 'tcx> {
                     if let TyKind::FnDef(def_id, list) = func_ty.kind() {
                         if is_atomic_ptr_store(*def_id, list, self.tcx) {
                             // AtomicPtr::store(arg0, arg1, ord) equals to arg0 = call(arg1)
-                            return self.process_call_arg_dest(arg1.as_ref(), arg0.as_ref());
+                            self.process_call_arg_dest(arg1.as_ref(), arg0.as_ref())
                         }
                     }
                 }

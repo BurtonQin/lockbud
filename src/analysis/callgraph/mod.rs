@@ -16,7 +16,7 @@ use petgraph::{Directed, Graph};
 
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Local, LocalDecl, LocalKind, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{self, EarlyBinder, Instance, ParamEnv, TyCtxt, TyKind};
+use rustc_middle::ty::{self, EarlyBinder, Instance, TyCtxt, TyKind, TypingEnv};
 
 /// The NodeIndex in CallGraph, denoting a unique instance in CallGraph.
 pub type InstanceId = NodeIndex;
@@ -97,7 +97,7 @@ impl<'tcx> CallGraph<'tcx> {
         &mut self,
         instances: Vec<Instance<'tcx>>,
         tcx: TyCtxt<'tcx>,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
     ) {
         let idx_insts = instances
             .into_iter()
@@ -112,7 +112,7 @@ impl<'tcx> CallGraph<'tcx> {
             if body.source.promoted.is_some() {
                 continue;
             }
-            let mut collector = CallSiteCollector::new(caller, body, tcx, param_env);
+            let mut collector = CallSiteCollector::new(caller, body, tcx, typing_env);
             collector.visit_body(body);
             for (callee, location) in collector.finish() {
                 let callee_idx = if let Some(callee_idx) = self.instance_to_index(&callee) {
@@ -169,7 +169,7 @@ struct CallSiteCollector<'a, 'tcx> {
     caller: Instance<'tcx>,
     body: &'a Body<'tcx>,
     tcx: TyCtxt<'tcx>,
-    param_env: ParamEnv<'tcx>,
+    typing_env: TypingEnv<'tcx>,
     callsites: Vec<(Instance<'tcx>, CallSiteLocation)>,
 }
 
@@ -178,13 +178,13 @@ impl<'a, 'tcx> CallSiteCollector<'a, 'tcx> {
         caller: Instance<'tcx>,
         body: &'a Body<'tcx>,
         tcx: TyCtxt<'tcx>,
-        param_env: ParamEnv<'tcx>,
+        typing_env: TypingEnv<'tcx>,
     ) -> Self {
         Self {
             caller,
             body,
             tcx,
-            param_env,
+            typing_env,
             callsites: Vec::new(),
         }
     }
@@ -195,7 +195,7 @@ impl<'a, 'tcx> CallSiteCollector<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
+impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
     /// Resolve direct call.
     /// Inspired by rustc_mir/src/transform/inline.rs#get_valid_function_call.
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
@@ -204,12 +204,12 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
             // Only after monomorphizing can Instance::try_resolve work
             let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
-                self.param_env,
+                self.typing_env,
                 EarlyBinder::bind(func_ty),
             );
             if let ty::FnDef(def_id, substs) = *func_ty.kind() {
                 if let Some(callee) =
-                    Instance::try_resolve(self.tcx, self.param_env, def_id, substs)
+                    Instance::try_resolve(self.tcx, self.typing_env, def_id, substs)
                         .ok()
                         .flatten()
                 {
@@ -231,7 +231,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
     fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
         let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
             self.tcx,
-            self.param_env,
+            self.typing_env,
             EarlyBinder::bind(local_decl.ty),
         );
         if let TyKind::Closure(def_id, substs) = func_ty.kind() {
@@ -239,7 +239,7 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                 LocalKind::Arg | LocalKind::ReturnPointer => {}
                 _ => {
                     if let Some(callee_instance) =
-                        Instance::try_resolve(self.tcx, self.param_env, *def_id, substs)
+                        Instance::try_resolve(self.tcx, self.typing_env, *def_id, substs)
                             .ok()
                             .flatten()
                     {

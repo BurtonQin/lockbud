@@ -102,7 +102,7 @@ struct AllLocalUsesVisitor {
     uses: BTreeSet<Location>,
 }
 
-impl<'tcx> Visitor<'tcx> for AllLocalUsesVisitor {
+impl Visitor<'_> for AllLocalUsesVisitor {
     fn visit_local(&mut self, local: Local, context: PlaceContext, location: Location) {
         if local == self.for_local {
             if let Some(DefUse::Use) = categorize(context) {

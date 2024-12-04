@@ -27,13 +27,13 @@ pub trait WithEndNodes: DirectedGraph {
     fn end_nodes(&self) -> Vec<Self::Node>;
 }
 
-impl<'graph, G: WithEndNodes> WithEndNodes for &'graph G {
+impl<G: WithEndNodes> WithEndNodes for &G {
     fn end_nodes(&self) -> Vec<Self::Node> {
         (**self).end_nodes()
     }
 }
 
-impl<'tcx> WithEndNodes for BasicBlocks<'tcx> {
+impl WithEndNodes for BasicBlocks<'_> {
     #[inline]
     fn end_nodes(&self) -> Vec<Self::Node> {
         self.iter_enumerated()
@@ -285,7 +285,7 @@ pub struct Iter<'dom, Node: Idx> {
     node: ExtNode<Node>,
 }
 
-impl<'dom, Node: Idx> Iterator for Iter<'dom, Node> {
+impl<Node: Idx> Iterator for Iter<'_, Node> {
     type Item = Node;
 
     fn next(&mut self) -> Option<Self::Item> {

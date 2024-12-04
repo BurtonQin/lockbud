@@ -13,7 +13,7 @@ use rustc_driver::Compilation;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::interface;
 use rustc_middle::mir::mono::MonoItem;
-use rustc_middle::ty::{Instance, ParamEnv, TyCtxt};
+use rustc_middle::ty::{Instance, TyCtxt, TypingEnv};
 
 use crate::analysis::callgraph::CallGraph;
 
@@ -60,10 +60,10 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             Some(path_buf) => self.output_directory.push(path_buf.as_path()),
         }
     }
-    fn after_analysis<'tcx>(
+    fn after_analysis(
         &mut self,
         compiler: &rustc_interface::interface::Compiler,
-        queries: &'tcx rustc_interface::Queries<'tcx>,
+        tcx: TyCtxt<'_>,
     ) -> rustc_driver::Compilation {
         compiler.sess.dcx().abort_if_errors();
         if self
@@ -75,9 +75,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             // No need to analyze a build script, but do generate code.
             return Compilation::Continue;
         }
-        queries.global_ctxt().unwrap().enter(|tcx| {
-            self.analyze_with_lockbud(compiler, tcx);
-        });
+        self.analyze_with_lockbud(compiler, tcx);
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
@@ -116,13 +114,13 @@ impl LockBudCallbacks {
             })
             .collect();
         let mut callgraph = CallGraph::new();
-        let param_env = ParamEnv::reveal_all();
-        callgraph.analyze(instances.clone(), tcx, param_env);
+        let typing_env = TypingEnv::fully_monomorphized();
+        callgraph.analyze(instances.clone(), tcx, typing_env);
         let mut alias_analysis = AliasAnalysis::new(tcx, &callgraph);
         match self.options.detector_kind {
             DetectorKind::Deadlock => {
                 debug!("Detecting deadlock");
-                let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
+                let mut deadlock_detector = DeadlockDetector::new(tcx, typing_env);
                 let reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
@@ -164,7 +162,7 @@ impl LockBudCallbacks {
                 debug!("Detecting all bugs");
                 let mut reports;
                 {
-                    let mut deadlock_detector = DeadlockDetector::new(tcx, param_env);
+                    let mut deadlock_detector = DeadlockDetector::new(tcx, typing_env);
                     reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
                 }
                 {

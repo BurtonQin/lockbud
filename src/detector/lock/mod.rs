@@ -23,7 +23,7 @@ use petgraph::{Directed, Direction, Graph};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{Body, Location, Operand, TerminatorKind};
-use rustc_middle::ty::{ParamEnv, TyCtxt};
+use rustc_middle::ty::{TyCtxt, TypingEnv};
 
 use std::collections::VecDeque;
 
@@ -60,15 +60,15 @@ type LockGuardsBeforeCallSites = FxHashMap<(InstanceId, Location), LiveLockGuard
 /// Detect doublelock and conflictlock.
 pub struct DeadlockDetector<'tcx> {
     tcx: TyCtxt<'tcx>,
-    param_env: ParamEnv<'tcx>,
+    typing_env: TypingEnv<'tcx>,
     pub lockguard_relations: FxHashSet<(LockGuardId, LockGuardId)>,
 }
 
 impl<'tcx> DeadlockDetector<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, param_env: ParamEnv<'tcx>) -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> Self {
         Self {
             tcx,
-            param_env,
+            typing_env,
             lockguard_relations: Default::default(),
         }
     }
@@ -89,7 +89,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
             }
             let body = self.tcx.instance_mir(instance.def);
             let mut lockguard_collector =
-                LockGuardCollector::new(instance_id, instance, body, self.tcx, self.param_env);
+                LockGuardCollector::new(instance_id, instance, body, self.tcx, self.typing_env);
             lockguard_collector.analyze();
             if !lockguard_collector.lockguards.is_empty() {
                 lockguards.insert(instance_id, lockguard_collector.lockguards);

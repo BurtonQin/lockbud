@@ -186,14 +186,18 @@ impl<'tcx> Visitor<'tcx> for PanicFinder<'tcx> {
             let func_ty = func.ty(self.body, self.tcx);
             let func_ty = self.instance.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
-                ty::ParamEnv::reveal_all(),
+                ty::TypingEnv::fully_monomorphized(),
                 EarlyBinder::bind(func_ty),
             );
             if let TyKind::FnDef(def_id, subst_ref) = func_ty.kind() {
-                if let Some(callee_instance) =
-                    Instance::try_resolve(self.tcx, ty::ParamEnv::reveal_all(), *def_id, subst_ref)
-                        .ok()
-                        .flatten()
+                if let Some(callee_instance) = Instance::try_resolve(
+                    self.tcx,
+                    ty::TypingEnv::fully_monomorphized(),
+                    *def_id,
+                    subst_ref,
+                )
+                .ok()
+                .flatten()
                 {
                     if let Some(panic_instance) = PanicInstance::new(callee_instance, self.tcx) {
                         self.callsites.insert(location, panic_instance);

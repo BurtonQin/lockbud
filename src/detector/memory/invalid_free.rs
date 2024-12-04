@@ -263,7 +263,7 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
     fn monomorphize(&self, instance: &Instance<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
         instance.instantiate_mir_and_normalize_erasing_regions(
             self.tcx,
-            ty::ParamEnv::reveal_all(),
+            ty::TypingEnv::fully_monomorphized(),
             EarlyBinder::bind(ty),
         )
     }
