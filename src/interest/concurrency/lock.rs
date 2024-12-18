@@ -1,5 +1,4 @@
 //! Collect LockGuard info.
-extern crate rustc_hash;
 extern crate rustc_span;
 
 use smallvec::SmallVec;

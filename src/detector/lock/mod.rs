@@ -1,6 +1,5 @@
 //! DeadlockDetector: detects doublelock and conflictlock.
 extern crate rustc_data_structures;
-extern crate rustc_hash;
 extern crate rustc_span;
 
 pub mod report;

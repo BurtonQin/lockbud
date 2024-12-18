@@ -1,5 +1,4 @@
 //! Find atomic functions and classify them into read, write, read-write.
-extern crate rustc_hash;
 extern crate rustc_hir;
 extern crate rustc_middle;
 

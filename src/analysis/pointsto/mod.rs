@@ -6,7 +6,6 @@
 //! with limited support for inter-procedural analysis
 //! of methods and closures.
 //! See `Andersen` for more details.
-extern crate rustc_hash;
 extern crate rustc_hir;
 extern crate rustc_index;
 
