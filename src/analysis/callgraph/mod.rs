@@ -14,9 +14,10 @@ use petgraph::visit::IntoNodeReferences;
 use petgraph::Direction::Incoming;
 use petgraph::{Directed, Graph};
 
-use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, Local, LocalDecl, LocalKind, Location, Terminator, TerminatorKind};
-use rustc_middle::ty::{self, EarlyBinder, Instance, TyCtxt, TyKind, TypingEnv};
+use stable_mir::mir::visit::{MirVisitor, Location};
+use stable_mir::mir::{Body, Terminator, TerminatorKind};
+use stable_mir::mir::mono::Instance;
+use stable_mir::ty::{RigidTy, TyKind};
 
 /// The NodeIndex in CallGraph, denoting a unique instance in CallGraph.
 pub type InstanceId = NodeIndex;
@@ -28,8 +29,8 @@ pub type InstanceId = NodeIndex;
 #[derive(Copy, Clone, Debug)]
 pub enum CallSiteLocation {
     Direct(Location),
-    ClosureDef(Local),
-    // Indirect(Location),
+    // ClosureDef(Local),
+    Indirect(Location),
 }
 
 impl CallSiteLocation {
@@ -44,19 +45,19 @@ impl CallSiteLocation {
 /// The CallGraph node wrapping an Instance.
 /// WithBody means the Instance owns body.
 #[derive(Debug, PartialEq, Eq)]
-pub enum CallGraphNode<'tcx> {
-    WithBody(Instance<'tcx>),
-    WithoutBody(Instance<'tcx>),
+pub enum CallGraphNode {
+    WithBody(Instance),
+    WithoutBody(Instance),
 }
 
-impl<'tcx> CallGraphNode<'tcx> {
-    pub fn instance(&self) -> &Instance<'tcx> {
+impl CallGraphNode {
+    pub fn instance(&self) -> &Instance {
         match self {
             CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) => inst,
         }
     }
 
-    pub fn match_instance(&self, other: &Instance<'tcx>) -> bool {
+    pub fn match_instance(&self, other: &Instance) -> bool {
         matches!(self, CallGraphNode::WithBody(inst) | CallGraphNode::WithoutBody(inst) if inst == other)
     }
 }
@@ -66,11 +67,11 @@ impl<'tcx> CallGraphNode<'tcx> {
 /// The directed edges are CallSite Locations.
 /// e.g., `Instance1--|[CallSite1, CallSite2]|-->Instance2`
 /// denotes `Instance1` calls `Instance2` at locations `Callsite1` and `CallSite2`.
-pub struct CallGraph<'tcx> {
-    pub graph: Graph<CallGraphNode<'tcx>, Vec<CallSiteLocation>, Directed>,
+pub struct CallGraph {
+    pub graph: Graph<CallGraphNode, Vec<CallSiteLocation>, Directed>,
 }
 
-impl<'tcx> CallGraph<'tcx> {
+impl CallGraph {
     /// Create an empty CallGraph.
     pub fn new() -> Self {
         Self {
@@ -79,7 +80,7 @@ impl<'tcx> CallGraph<'tcx> {
     }
 
     /// Search for the InstanceId of a given instance in CallGraph.
-    pub fn instance_to_index(&self, instance: &Instance<'tcx>) -> Option<InstanceId> {
+    pub fn instance_to_index(&self, instance: &Instance) -> Option<InstanceId> {
         self.graph
             .node_references()
             .find(|(_idx, inst)| inst.match_instance(instance))
@@ -87,7 +88,7 @@ impl<'tcx> CallGraph<'tcx> {
     }
 
     /// Get the instance by InstanceId.
-    pub fn index_to_instance(&self, idx: InstanceId) -> Option<&CallGraphNode<'tcx>> {
+    pub fn index_to_instance(&self, idx: InstanceId) -> Option<&CallGraphNode> {
         self.graph.node_weight(idx)
     }
 
@@ -95,9 +96,7 @@ impl<'tcx> CallGraph<'tcx> {
     /// The instances should be **all** the instances with MIR available in the current crate.
     pub fn analyze(
         &mut self,
-        instances: Vec<Instance<'tcx>>,
-        tcx: TyCtxt<'tcx>,
-        typing_env: TypingEnv<'tcx>,
+        instances: Vec<Instance>,
     ) {
         let idx_insts = instances
             .into_iter()
@@ -107,12 +106,8 @@ impl<'tcx> CallGraph<'tcx> {
             })
             .collect::<Vec<_>>();
         for (caller_idx, caller) in idx_insts {
-            let body = tcx.instance_mir(caller.def);
-            // Skip promoted src
-            if body.source.promoted.is_some() {
-                continue;
-            }
-            let mut collector = CallSiteCollector::new(caller, body, tcx, typing_env);
+            let body = &caller.body().unwrap();
+            let mut collector = CallSiteCollector::new(caller, body);
             collector.visit_body(body);
             for (callee, location) in collector.finish() {
                 let callee_idx = if let Some(callee_idx) = self.instance_to_index(&callee) {
@@ -165,90 +160,49 @@ impl<'tcx> CallGraph<'tcx> {
 }
 
 /// Visit Terminator and record callsites (callee + location).
-struct CallSiteCollector<'a, 'tcx> {
-    caller: Instance<'tcx>,
-    body: &'a Body<'tcx>,
-    tcx: TyCtxt<'tcx>,
-    typing_env: TypingEnv<'tcx>,
-    callsites: Vec<(Instance<'tcx>, CallSiteLocation)>,
+struct CallSiteCollector<'a> {
+    caller: Instance,
+    body: &'a Body,
+    callsites: Vec<(Instance, CallSiteLocation)>,
 }
 
-impl<'a, 'tcx> CallSiteCollector<'a, 'tcx> {
+impl<'a> CallSiteCollector<'a> {
     fn new(
-        caller: Instance<'tcx>,
-        body: &'a Body<'tcx>,
-        tcx: TyCtxt<'tcx>,
-        typing_env: TypingEnv<'tcx>,
+        caller: Instance,
+        body: &'a Body,
     ) -> Self {
         Self {
             caller,
             body,
-            tcx,
-            typing_env,
             callsites: Vec::new(),
         }
     }
 
     /// Consumes `CallSiteCollector` and returns its callsites when finished visiting.
-    fn finish(self) -> impl IntoIterator<Item = (Instance<'tcx>, CallSiteLocation)> {
+    fn finish(self) -> impl IntoIterator<Item = (Instance, CallSiteLocation)> {
         self.callsites.into_iter()
     }
 }
 
-impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
+impl MirVisitor for CallSiteCollector<'_,> {
     /// Resolve direct call.
-    /// Inspired by rustc_mir/src/transform/inline.rs#get_valid_function_call.
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
-        if let TerminatorKind::Call { ref func, .. } = terminator.kind {
-            let func_ty = func.ty(self.body, self.tcx);
-            // Only after monomorphizing can Instance::try_resolve work
-            let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
-                self.tcx,
-                self.typing_env,
-                EarlyBinder::bind(func_ty),
-            );
-            if let ty::FnDef(def_id, substs) = *func_ty.kind() {
-                if let Some(callee) =
-                    Instance::try_resolve(self.tcx, self.typing_env, def_id, substs)
-                        .ok()
-                        .flatten()
-                {
-                    self.callsites
-                        .push((callee, CallSiteLocation::Direct(location)));
+    /// Inspired by https://github.com/model-checking/kani/blob/33b74e03a1fed6b045088e428a5a0cc5fcfd70f6/kani-compiler/src/kani_middle/reachability.rs#L439.
+    fn visit_terminator(&mut self, terminator: &Terminator, location: Location) {
+        match terminator.kind {
+            TerminatorKind::Call { ref func, .. } => {
+                let func_ty = func.ty(self.body.locals()).unwrap();
+                if let TyKind::RigidTy(RigidTy::FnDef(fn_def, args)) = func_ty.kind() {
+                    let callee = Instance::resolve(fn_def, &args).unwrap();
+                    self.callsites.push((callee, CallSiteLocation::Direct(location)));
                 }
             }
+            TerminatorKind::Drop { ref place, .. } => {
+                let place_ty = place.ty(self.body.locals()).unwrap();
+                let callee = Instance::resolve_drop_in_place(place_ty);
+                self.callsites.push((callee, CallSiteLocation::Direct(location)));
+            }
+            _ => {}
         }
         self.super_terminator(terminator, location);
-    }
-
-    /// Find where the closure is defined rather than called,
-    /// including the closure instance and the arg.
-    ///
-    /// e.g., let mut _20: [closure@src/main.rs:13:28: 16:6];
-    ///
-    /// _20 is of type Closure, but it is actually the arg that captures
-    /// the variables in the defining function.
-    fn visit_local_decl(&mut self, local: Local, local_decl: &LocalDecl<'tcx>) {
-        let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
-            self.tcx,
-            self.typing_env,
-            EarlyBinder::bind(local_decl.ty),
-        );
-        if let TyKind::Closure(def_id, substs) = func_ty.kind() {
-            match self.body.local_kind(local) {
-                LocalKind::Arg | LocalKind::ReturnPointer => {}
-                _ => {
-                    if let Some(callee_instance) =
-                        Instance::try_resolve(self.tcx, self.typing_env, *def_id, substs)
-                            .ok()
-                            .flatten()
-                    {
-                        self.callsites
-                            .push((callee_instance, CallSiteLocation::ClosureDef(local)));
-                    }
-                }
-            }
-        }
-        self.super_local_decl(local, local_decl);
     }
 }

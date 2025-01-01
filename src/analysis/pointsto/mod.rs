@@ -6,27 +6,32 @@
 //! with limited support for inter-procedural analysis
 //! of methods and closures.
 //! See `Andersen` for more details.
-extern crate rustc_hir;
-extern crate rustc_index;
+// extern crate rustc_hir;
+// extern crate rustc_index;
 
 use std::cmp::{Ordering, PartialOrd};
 use std::collections::VecDeque;
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use rustc_hir::def_id::DefId;
-use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{
-    AggregateKind, Body, ConstOperand, Local, Location, Operand, Place, PlaceElem, PlaceRef,
-    ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
-};
+// use rustc_hir::def_id::DefId;
+// use rustc_middle::mir::visit::Visitor;
+// use rustc_middle::mir::{
+//     AggregateKind, Body, ConstOperand, Local, Location, Operand, Place, PlaceElem, PlaceRef,
+//     ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+// };
 
-use rustc_middle::mir::Const;
-use rustc_middle::ty::{Instance, TyCtxt, TyKind};
+use stable_mir::mir::mono::Instance;
+// use rustc_middle::mir::Const;
+// use rustc_middle::ty::{Instance, TyCtxt, TyKind};
+use stable_mir::mir::visit::{Location, MirVisitor, PlaceRef};
+
 
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Direction, Graph};
+use stable_mir::mir::{AggregateKind, Body, ConstOperand, Operand, Place, ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind};
+use stable_mir::ty::{ConstantKind, MirConst, MirConstId, RigidTy, TyKind};
 
 use crate::analysis::callgraph::{CallGraph, CallGraphNode, CallSiteLocation, InstanceId};
 use crate::interest::concurrency::atomic::is_atomic_ptr_store;
@@ -46,24 +51,36 @@ use crate::interest::memory::ownership;
 /// 5. Interproc methods: Use parameters' type info to guide the analysis heuristically (simple but powerful).
 /// 6. Interproc closures: Track the upvars of closures in the functions defining the closures (restricted).
 pub struct Andersen<'a, 'tcx> {
-    body: &'a Body<'tcx>,
-    tcx: TyCtxt<'tcx>,
+    body: &'a Body,
     pts: PointsToMap<'tcx>,
 }
 
 pub type PointsToMap<'tcx> = FxHashMap<ConstraintNode<'tcx>, FxHashSet<ConstraintNode<'tcx>>>;
 
+fn as_ref(place: &Place) -> PlaceRef {
+    PlaceRef {
+        local: place.local,
+        projection: &place.projection
+    }
+}
+
+fn ref_copy<'a>(place: &'a PlaceRef) -> PlaceRef<'a> {
+    PlaceRef {
+        local: place.local,
+        projection: &place.projection
+    }
+}
+
 impl<'a, 'tcx> Andersen<'a, 'tcx> {
-    pub fn new(body: &'a Body<'tcx>, tcx: TyCtxt<'tcx>) -> Self {
+    pub fn new(body: &'a Body) -> Self {
         Self {
             body,
-            tcx,
             pts: Default::default(),
         }
     }
 
     pub fn analyze(&mut self) {
-        let mut collector = ConstraintGraphCollector::new(self.body, self.tcx);
+        let mut collector = ConstraintGraphCollector::new(self.body);
         collector.visit_body(self.body);
         let mut graph = collector.finish();
         let mut worklist = VecDeque::new();
@@ -153,12 +170,11 @@ impl<'a, 'tcx> Andersen<'a, 'tcx> {
 /// To enable the propagtion of points-to info for `Constant`,
 /// we introduce `ConstantDeref` to denote the points-to node of `Constant`,
 /// namely, forall Constant(c), Constant(c)--|address|-->ConstantDeref(c).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConstraintNode<'tcx> {
     Alloc(PlaceRef<'tcx>),
     Place(PlaceRef<'tcx>),
-    Constant(Const<'tcx>),
-    ConstantDeref(Const<'tcx>),
+    Constant(MirConstId),
+    ConstantDeref(MirConstId),
 }
 
 /// The assignments in MIR with default `mir-opt-level` (level 1) are simplified
@@ -187,12 +203,11 @@ enum ConstraintEdge {
     AliasCopy, // Special: y=Arc::clone(x) or y=ptr::read(x)
 }
 
-#[derive(Debug)]
 enum AccessPattern<'tcx> {
     Ref(PlaceRef<'tcx>),
     Indirect(PlaceRef<'tcx>),
     Direct(PlaceRef<'tcx>),
-    Constant(Const<'tcx>),
+    Constant(MirConstId),
 }
 
 #[derive(Default)]
@@ -251,7 +266,7 @@ impl<'tcx> ConstraintGraph<'tcx> {
         self.graph.add_edge(rhs, lhs, ConstraintEdge::Copy);
     }
 
-    fn add_copy_constant(&mut self, lhs: PlaceRef<'tcx>, rhs: Const<'tcx>) {
+    fn add_copy_constant(&mut self, lhs: PlaceRef<'tcx>, rhs: MirConstId) {
         let lhs = ConstraintNode::Place(lhs);
         let rhs = ConstraintNode::Constant(rhs);
         let lhs = self.get_or_insert_node(lhs);
@@ -275,7 +290,7 @@ impl<'tcx> ConstraintGraph<'tcx> {
         self.graph.add_edge(rhs, lhs, ConstraintEdge::Store);
     }
 
-    fn add_store_constant(&mut self, lhs: PlaceRef<'tcx>, rhs: Const<'tcx>) {
+    fn add_store_constant(&mut self, lhs: PlaceRef<'tcx>, rhs: MirConstId) {
         let lhs = ConstraintNode::Place(lhs);
         let rhs = ConstraintNode::Constant(rhs);
         let lhs = self.get_or_insert_node(lhs);
@@ -413,22 +428,20 @@ impl<'tcx> ConstraintGraph<'tcx> {
 
 /// Generate `ConstraintGraph` by visiting MIR body.
 struct ConstraintGraphCollector<'a, 'tcx> {
-    body: &'a Body<'tcx>,
-    tcx: TyCtxt<'tcx>,
+    body: &'a Body,
     graph: ConstraintGraph<'tcx>,
 }
 
 impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
-    fn new(body: &'a Body<'tcx>, tcx: TyCtxt<'tcx>) -> Self {
+    fn new(body: &'a Body) -> Self {
         Self {
             body,
-            tcx,
             graph: ConstraintGraph::default(),
         }
     }
 
-    fn process_assignment(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
-        let lhs_pattern = Self::process_place(place.as_ref());
+    fn process_assignment(&mut self, place: &Place, rvalue: &Rvalue) {
+        let lhs_pattern = Self::process_place(place);
         let rhs_patterns = Self::process_rvalue(rvalue);
         // TODO(boqin): check if mk_place_field work for all places.
         // original closure impl:
@@ -491,26 +504,26 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
         }
     }
 
-    fn process_operand(operand: &Operand<'tcx>) -> Option<AccessPattern<'tcx>> {
+    fn process_operand(operand: &Operand) -> Option<AccessPattern<'tcx>> {
         match operand {
             Operand::Move(place) | Operand::Copy(place) => {
-                Some(AccessPattern::Direct(place.as_ref()))
+                Some(AccessPattern::Direct(as_ref(place)))
             }
-            Operand::Constant(box ConstOperand {
+            Operand::Constant(ConstOperand {
                 span: _,
                 user_ty: _,
                 const_,
-            }) => Some(AccessPattern::Constant(*const_)),
+            }) => Some(AccessPattern::Constant(const_.id)),
         }
     }
 
-    fn process_rvalue(rvalue: &Rvalue<'tcx>) -> Vec<Option<AccessPattern<'tcx>>> {
+    fn process_rvalue(rvalue: &'tcx Rvalue) -> Vec<Option<AccessPattern<'tcx>>> {
         match rvalue {
             Rvalue::Use(operand) | Rvalue::Repeat(operand, _) | Rvalue::Cast(_, operand, _) => {
                 vec![Self::process_operand(operand)]
             }
             // Regard `p = &*q` as `p = q`
-            Rvalue::Ref(_, _, place) | Rvalue::RawPtr(_, place) => match place.as_ref() {
+            Rvalue::Ref(_, _, place) => match as_ref(place) {
                 PlaceRef {
                     local: l,
                     projection: [ProjectionElem::Deref, ref remain @ ..],
@@ -518,8 +531,25 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
                     local: l,
                     projection: remain,
                 }))],
-                _ => vec![Some(AccessPattern::Ref(place.as_ref()))],
+                _ => vec![Some(AccessPattern::Ref(as_ref(place)))],
             },
+            Rvalue::Aggregate(AggregateKind::RawPtr(_, _), operands) => {
+                match &operands[0] {
+                    Operand::Copy(place) | Operand::Move(place) => {
+                        match as_ref(place) {
+                            PlaceRef {
+                                local: l,
+                                projection: [ProjectionElem::Deref, ref remain @ ..],
+                            } => vec![Some(AccessPattern::Direct(PlaceRef {
+                                local: l,
+                                projection: remain,
+                            }))],
+                            _ => vec![Some(AccessPattern::Ref(as_ref(place)))],
+                        }
+                    }
+                    Operand::Constant(_) => { vec![] }
+                }
+            }
             Rvalue::Aggregate(_, fields) => {
                 let fields = fields.iter().map(Self::process_operand).collect::<Vec<_>>();
                 fields
@@ -538,7 +568,7 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
     /// arg--|load|-->dest and
     /// arg--|alias_copy|-->dest
     fn process_alias_copy(&mut self, arg: PlaceRef<'tcx>, dest: PlaceRef<'tcx>) {
-        self.graph.add_load(dest, arg);
+        self.graph.add_load(ref_copy(&dest), ref_copy(&arg));
         self.graph.add_alias_copy(dest, arg);
     }
 
@@ -572,10 +602,10 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
     }
 }
 
-impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
-    fn visit_statement(&mut self, statement: &Statement<'tcx>, _location: Location) {
+impl<'tcx> MirVisitor for ConstraintGraphCollector<'_, 'tcx> {
+    fn visit_statement(&mut self, statement: &Statement, _location: Location) {
         match &statement.kind {
-            StatementKind::Assign(box (place, rvalue)) => {
+            StatementKind::Assign(place, rvalue) => {
                 self.process_assignment(place, rvalue);
             }
             StatementKind::FakeRead(_)
@@ -584,13 +614,12 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
             | StatementKind::StorageLive(_)
             | StatementKind::StorageDead(_)
             | StatementKind::Retag(_, _)
-            | StatementKind::AscribeUserType(_, _)
+            | StatementKind::AscribeUserType { .. }
             | StatementKind::Coverage(_)
             | StatementKind::Nop
             | StatementKind::PlaceMention(_)
             | StatementKind::ConstEvalCounter
-            | StatementKind::Intrinsic(_)
-            | StatementKind::BackwardIncompatibleDropHint { .. } => {}
+            | StatementKind::Intrinsic(_) => {}
         }
     }
 
@@ -601,7 +630,7 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
     /// For other callsites like `destination = call fn(move args0)`,
     /// heuristically assumes that
     /// destination = copy args0
-    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, _location: Location) {
+    fn visit_terminator(&mut self, terminator: &Terminator, _location: Location) {
         if let TerminatorKind::Call {
             func,
             args,
@@ -610,27 +639,26 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
         } = &terminator.kind
         {
             match (
-                args.iter()
-                    .map(|x| x.node.clone())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
+                args.as_slice(),
                 destination,
             ) {
                 (&[Operand::Move(arg)], dest) | (&[Operand::Copy(arg)], dest) => {
-                    let func_ty = func.ty(self.body, self.tcx);
-                    if let TyKind::FnDef(def_id, substs) = func_ty.kind() {
-                        if ownership::is_arc_or_rc_clone(*def_id, substs, self.tcx)
-                            || ownership::is_ptr_read(*def_id, self.tcx)
+                    let func_ty = func.ty(self.body.locals()).unwrap();
+                    if let TyKind::RigidTy(RigidTy::FnDef(fn_def, args)) = func_ty.kind() {
+                        let callee = Instance::resolve(fn_def, &args).unwrap();
+                        if ownership::is_arc_or_rc_clone(&callee)
+                            || ownership::is_ptr_read(&callee)
                         {
-                            return self.process_alias_copy(arg.as_ref(), dest.as_ref());
+                            return self.process_alias_copy(as_ref(&arg), as_ref(&dest));
                         }
                     }
-                    self.process_call_arg_dest(arg.as_ref(), dest.as_ref());
+                    self.process_call_arg_dest(as_ref(&arg), as_ref(&arg));
                 }
                 (&[Operand::Move(arg), _], dest) => {
-                    let func_ty = func.ty(self.body, self.tcx);
-                    if let TyKind::FnDef(def_id, _) = func_ty.kind() {
-                        if ownership::is_index(*def_id, self.tcx) {
+                    let func_ty = func.ty(self.body.locals()).unwrap();
+                    if let TyKind::RigidTy(RigidTy::FnDef(fn_def, args)) = func_ty.kind() {
+                        let callee = Instance::resolve(fn_def, &args).unwrap();
+                        if ownership::is_index(&callee) {
                             // index(arg0, arg1)
                             // e.g., <String as Index<std::ops::Range<usize>>>::index(move _97, move _98)
                             self.process_call_arg_dest(arg.as_ref(), dest.as_ref())
@@ -639,8 +667,9 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
                 }
                 (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Move(_arg2)], _dest)
                 | (&[Operand::Move(arg0), Operand::Move(arg1), Operand::Copy(_arg2)], _dest) => {
-                    let func_ty = func.ty(self.body, self.tcx);
-                    if let TyKind::FnDef(def_id, list) = func_ty.kind() {
+                    let func_ty = func.ty(self.body.locals()).unwrap();
+                    if let TyKind::RigidTy(RigidTy::FnDef(fn_def, args)) = func_ty.kind() {
+                        let callee = Instance::resolve(fn_def, &args).unwrap();
                         if is_atomic_ptr_store(*def_id, list, self.tcx) {
                             // AtomicPtr::store(arg0, arg1, ord) equals to arg0 = call(arg1)
                             self.process_call_arg_dest(arg1.as_ref(), arg0.as_ref())

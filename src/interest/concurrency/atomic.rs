@@ -1,13 +1,12 @@
 //! Find atomic functions and classify them into read, write, read-write.
-extern crate rustc_hir;
-extern crate rustc_middle;
+// extern crate rustc_hir;
+// extern crate rustc_middle;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use rustc_hash::FxHashMap;
-use rustc_hir::def_id::DefId;
-use rustc_middle::ty::{GenericArg, Instance, List, TyCtxt};
+use stable_mir::mir::mono::Instance;
 
 static ATOMIC_API_REGEX: Lazy<FxHashMap<&'static str, Regex>> = Lazy::new(|| {
     macro_rules! atomic_api_prefix {
@@ -55,8 +54,8 @@ pub enum AtomicApi {
 }
 
 impl AtomicApi {
-    pub fn from_instance<'tcx>(instance: Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let path = tcx.def_path_str_with_args(instance.def_id(), instance.args);
+    pub fn from_instance(instance: &Instance) -> Option<Self> {
+        let path = instance.name();
         if ATOMIC_API_REGEX["AtomicRead"].is_match(&path) {
             Some(AtomicApi::Read)
         } else if ATOMIC_API_REGEX["AtomicWrite"].is_match(&path) {
@@ -75,11 +74,9 @@ static ATOMIC_PTR_STORE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(std|core)::sync::atomic::AtomicPtr::<.*>::store").unwrap());
 
 pub fn is_atomic_ptr_store<'tcx>(
-    def_id: DefId,
-    substs: &'tcx List<GenericArg<'tcx>>,
-    tcx: TyCtxt<'tcx>,
+    instance: &Instance
 ) -> bool {
-    let path = tcx.def_path_str_with_args(def_id, substs);
+    let path = instance.name();
     ATOMIC_PTR_STORE.is_match(&path)
 }
 

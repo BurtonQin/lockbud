@@ -4,7 +4,9 @@
 //! 2. std::Condvar::notify.*(&Condvar)
 //! 3. parking_lot::Condvar::wait.*(&Condvar, &mut MutexGuard,.*)
 //! 4. parking_lot::Condvar::notify.*(&Condvar)
-use rustc_middle::ty::{Instance, TyCtxt};
+// use rustc_middle::ty::{Instance, TyCtxt};
+
+use stable_mir::mir::mono::Instance;
 
 #[derive(Clone, Copy, Debug)]
 pub enum CondvarApi {
@@ -13,8 +15,8 @@ pub enum CondvarApi {
 }
 
 impl CondvarApi {
-    pub fn from_instance<'tcx>(instance: &Instance<'tcx>, tcx: TyCtxt<'tcx>) -> Option<Self> {
-        let path = tcx.def_path_str_with_args(instance.def_id(), instance.args);
+    pub fn from_instance<'tcx>(instance: &Instance) -> Option<Self> {
+        let path = instance.name();
         let std_condvar = "std::sync::Condvar::";
         let parking_lot_condvar = "parking_lot::Condvar::";
         if path.starts_with(std_condvar) {

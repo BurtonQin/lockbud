@@ -2,6 +2,8 @@
 //! Inspired by <https://github.com/facebookexperimental/MIRAI/blob/9cf3067309d591894e2d0cd9b1ee6e18d0fdd26c/checker/src/callbacks.rs>
 extern crate rustc_driver;
 extern crate rustc_hir;
+extern crate rustc_smir;
+extern crate stable_mir;
 
 use std::path::PathBuf;
 
@@ -14,6 +16,8 @@ use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::interface;
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{Instance, TyCtxt, TypingEnv};
+use rustc_smir::rustc_internal;
+// use stable_mir::mir::mono::Instance;
 
 use crate::analysis::callgraph::CallGraph;
 
@@ -21,6 +25,8 @@ use crate::detector::atomic::AtomicityViolationDetector;
 use crate::detector::lock::DeadlockDetector;
 use crate::detector::panic::PanicDetector;
 use crate::detector::report::Report;
+
+use std::ops::ControlFlow;
 
 pub struct LockBudCallbacks {
     options: Options,
@@ -76,6 +82,9 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
             return Compilation::Continue;
         }
         self.analyze_with_lockbud(compiler, tcx);
+        // let rustc_args = std::env::args().into_iter().collect();
+        // println!("{rustc_args:?}");
+        // let result = run!(rustc_args, start_demo);
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.
             Compilation::Stop
@@ -86,10 +95,18 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
     }
 }
 
+fn start_demo() -> ControlFlow<()> {
+    let crate_name = stable_mir::local_crate().name;
+    eprintln!("--- Analyzing crate: {crate_name}");
+    ControlFlow::Continue(())
+}
+
 impl LockBudCallbacks {
     fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
+        let crate_name2 = stable_mir::local_crate().name;
+        println!("{crate_name} == {crate_name2}");
         match &self.options.crate_name_list {
             CrateNameList::White(crates) if !crates.is_empty() && !crates.contains(&crate_name) => {
                 return
@@ -113,6 +130,9 @@ impl LockBudCallbacks {
                 })
             })
             .collect();
+        let stable_instance0 = rustc_internal::stable(instances[0]);
+        println!("hello {:?}", stable_instance0.name());
+
         let mut callgraph = CallGraph::new();
         let typing_env = TypingEnv::fully_monomorphized();
         callgraph.analyze(instances.clone(), tcx, typing_env);
