@@ -100,7 +100,7 @@ impl LockBudCallbacks {
         if tcx.sess.opts.unstable_opts.no_codegen || !tcx.sess.opts.output_types.should_codegen() {
             return;
         }
-        let cgus = tcx.collect_and_partition_mono_items(()).1;
+        let cgus = tcx.collect_and_partition_mono_items(()).codegen_units;
         let instances: Vec<Instance<'tcx>> = cgus
             .iter()
             .flat_map(|cgu| {

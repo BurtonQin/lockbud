@@ -86,9 +86,8 @@ fn main() {
 
         let mut callbacks = callbacks::LockBudCallbacks::new(options);
         debug!("rustc_command_line_arguments {rustc_command_line_arguments:?}");
-        let compiler =
-            rustc_driver::RunCompiler::new(&rustc_command_line_arguments, &mut callbacks);
-        compiler.run()
+        rustc_driver::run_compiler(&rustc_command_line_arguments, &mut callbacks);
+        Ok(())
     });
     std::process::exit(exit_code);
 }

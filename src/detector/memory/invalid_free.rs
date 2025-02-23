@@ -14,7 +14,7 @@ extern crate rustc_index;
 extern crate rustc_middle;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_index::bit_set::BitSet;
+use rustc_index::bit_set::MixedBitSet as BitSet;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{BasicBlock, Body, Location, Place, TerminatorKind};
 use rustc_middle::ty::{self, EarlyBinder, Instance, Ty, TyCtxt};
