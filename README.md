@@ -39,10 +39,8 @@ Currently supports rustc nightly-2024-12-01 (Thanks to @mokhaled2992).
 ```
 $ git clone https://github.com/BurtonQin/lockbud.git
 $ cd lockbud
-$ rustup component add rust-src
-$ rustup component add rustc-dev
-$ rustup component add llvm-tools-preview
-$ cargo install --path .
+$ rustup +nightly-2025-02-01 component add rust-src rustc-dev llvm-tools-preview
+$ cargo +nightly-2025-02-01 install --path .
 ```
 
 Note that you must use the same rustc nightly version as lockbud to detect your project!
