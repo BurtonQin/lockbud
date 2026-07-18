@@ -111,7 +111,7 @@ fn multi_ends_influences() {
     let control_deps = control_deps(graph);
     assert_eq!(
         format!("{:?}", control_deps.parents),
-        "[{0}, {0}, {0}, {1}, {1, 2}, {2}, {0, 2}]"
+        "[{0}, {0}, {0}, {1}, {2, 1}, {2}, {0, 2}]"
     );
     let true_pairs = [(1, 3), (1, 4), (2, 4), (2, 5), (2, 6)];
     for i in 0..7 {

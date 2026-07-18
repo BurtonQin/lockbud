@@ -42,11 +42,7 @@ impl LockBudCallbacks {
 
 impl rustc_driver::Callbacks for LockBudCallbacks {
     fn config(&mut self, config: &mut rustc_interface::interface::Config) {
-        self.file_name = config
-            .input
-            .source_name()
-            .prefer_remapped_unconditionally()
-            .to_string();
+        self.file_name = "<rustc input>".to_owned();
         debug!("Processing input file: {}", self.file_name);
         if config.opts.test {
             debug!("in test only mode");

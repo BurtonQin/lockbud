@@ -1,6 +1,5 @@
 //! DeadlockDetector: detects doublelock and conflictlock.
 extern crate rustc_data_structures;
-extern crate rustc_hash;
 extern crate rustc_span;
 
 pub mod report;
@@ -21,7 +20,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeReferences};
 use petgraph::{Directed, Direction, Graph};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{Body, Location, Operand, TerminatorKind};
 use rustc_middle::ty::{TyCtxt, TypingEnv};
 
@@ -149,25 +148,46 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 for edge in callgraph.graph.edges_directed(id, Direction::Outgoing) {
                     let callee = edge.target();
                     for callsite in edge.weight() {
-                        let loc = match callsite.location() {
-                            Some(loc) => loc,
-                            None => continue,
-                        };
-                        let callsite_state = states[&loc].clone();
-                        let changed = contexts
-                            .get_mut(&callee)
-                            .unwrap()
-                            .union_in_place(callsite_state);
-                        if changed {
-                            worklist.push_back(callee);
-                        }
-                        if condvar_apis.contains_key(&callee) {
-                            lockguards_before_condvar_apis
-                                .entry(callee)
-                                .or_default()
-                                .entry((id, loc))
-                                .or_default()
-                                .union_in_place(states[&loc].clone());
+                        if let Some(loc) = callsite.location() {
+                            let callsite_state = states[&loc].clone();
+                            let changed = contexts
+                                .get_mut(&callee)
+                                .unwrap()
+                                .union_in_place(callsite_state);
+                            if changed {
+                                worklist.push_back(callee);
+                            }
+                            if condvar_apis.contains_key(&callee) {
+                                lockguards_before_condvar_apis
+                                    .entry(callee)
+                                    .or_default()
+                                    .entry((id, loc))
+                                    .or_default()
+                                    .union_in_place(states[&loc].clone());
+                            }
+                        } else if matches!(
+                            callsite,
+                            crate::analysis::callgraph::CallSiteLocation::ClosureDef(_, None)
+                        ) {
+                            let mut closure_context = LiveLockGuards::default();
+                            for state in states.values() {
+                                closure_context.union_in_place(state.clone());
+                            }
+                            let changed = contexts
+                                .get_mut(&callee)
+                                .unwrap()
+                                .union_in_place(closure_context.clone());
+                            if changed {
+                                worklist.push_back(callee);
+                            }
+                            if condvar_apis.contains_key(&callee) {
+                                lockguards_before_condvar_apis
+                                    .entry(callee)
+                                    .or_default()
+                                    .entry((id, Location::START))
+                                    .or_default()
+                                    .union_in_place(closure_context);
+                            }
                         }
                     }
                 }

@@ -6,14 +6,14 @@
 //! with limited support for inter-procedural analysis
 //! of methods and closures.
 //! See `Andersen` for more details.
-extern crate rustc_hash;
+extern crate rustc_data_structures;
 extern crate rustc_hir;
 extern crate rustc_index;
 
 use std::cmp::{Ordering, PartialOrd};
 use std::collections::VecDeque;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{
@@ -502,6 +502,7 @@ impl<'a, 'tcx> ConstraintGraphCollector<'a, 'tcx> {
                 user_ty: _,
                 const_,
             }) => Some(AccessPattern::Constant(*const_)),
+            Operand::RuntimeChecks(_) => None,
         }
     }
 
@@ -581,7 +582,6 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
             }
             StatementKind::FakeRead(_)
             | StatementKind::SetDiscriminant { .. }
-            | StatementKind::Deinit(_)
             | StatementKind::StorageLive(_)
             | StatementKind::StorageDead(_)
             | StatementKind::Retag(_, _)
@@ -870,14 +870,14 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         node2: &ConstraintNode<'tcx>,
     ) -> Option<ApproximateAliasKind> {
         let body = self.tcx.instance_mir(instance.def);
-        let points_to_map = self.get_or_insert_pts(instance.def_id(), body);
-        if points_to_map
-            .get(node1)?
-            .intersection(points_to_map.get(node2)?)
-            .next()
-            .is_some()
-        {
-            Some(ApproximateAliasKind::Probably)
+        let points_to_map = self.get_or_insert_pts(instance.def_id(), body).clone();
+        let pts1 = points_to_map.get(node1)?.clone();
+        let pts2 = points_to_map.get(node2)?.clone();
+        if pts1.intersection(&pts2).next().is_some() {
+            return Some(ApproximateAliasKind::Probably);
+        }
+        if point_to_same_projected_alias(&pts1, &pts2, &points_to_map, body, self.tcx) {
+            Some(ApproximateAliasKind::Possibly)
         } else {
             Some(ApproximateAliasKind::Unlikely)
         }
@@ -954,18 +954,27 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
             return Some(ApproximateAliasKind::Probably);
         }
         // 2. Check if `node1` and `node2` points to func parameters with the same local's type and projection.
-        if point_to_same_type_param(pts1, pts2, body1, body2) {
+        if point_to_same_type_param(pts1, pts2, body1, body2)
+            || point_to_same_projected_param(
+                pts1,
+                pts2,
+                &points_to_map1,
+                &points_to_map2,
+                body1,
+                body2,
+                self.tcx,
+            )
+        {
             return Some(ApproximateAliasKind::Possibly);
         }
         // 3. Check if `node1` and `node2` point to upvars of closures and the upvars alias in the def func.
         // 3.1 Get defsite upvars of `node1` then check if `node2` points to the upvar.
-        let mut defsite_upvars1 = None;
+        let mut defsite_upvars1 = Vec::new();
         if self.tcx.is_closure_like(instance1.def_id()) {
             let pts_paths = points_to_paths_to_param(node1.clone(), body1, &points_to_map1);
             for pts_path in pts_paths {
-                let defsite_upvars = match self.closure_defsite_upvars(instance1, pts_path) {
-                    Some(defsite_upvars) => defsite_upvars,
-                    None => continue,
+                let Some(defsite_upvars) = self.closure_defsite_upvars(instance1, &pts_path) else {
+                    continue;
                 };
                 for (def_inst, upvar) in defsite_upvars.iter() {
                     if def_inst.def_id() == instance2.def_id() {
@@ -977,20 +986,16 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
                         }
                     }
                 }
-                // Record defsite_upvars.
-                defsite_upvars1 = Some(defsite_upvars);
-                // The last fields of the paths are usually the same, thus only iterate once.
-                break;
+                defsite_upvars1.extend(defsite_upvars);
             }
         }
         // 3.2 Get defsite upvars of `node2` then check if `node1` points to the upvar.
-        let mut defsite_upvars2 = None;
+        let mut defsite_upvars2 = Vec::new();
         if self.tcx.is_closure_like(instance2.def_id()) {
             let pts_paths = points_to_paths_to_param(node2.clone(), body2, &points_to_map2);
             for pts_path in pts_paths {
-                let defsite_upvars = match self.closure_defsite_upvars(instance2, pts_path) {
-                    Some(defsite_upvars) => defsite_upvars,
-                    None => continue,
+                let Some(defsite_upvars) = self.closure_defsite_upvars(instance2, &pts_path) else {
+                    continue;
                 };
                 for (def_inst, upvar) in defsite_upvars.iter() {
                     if def_inst.def_id() == instance1.def_id() {
@@ -1002,14 +1007,11 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
                         }
                     }
                 }
-                // Record defsite_upvars.
-                defsite_upvars2 = Some(defsite_upvars);
-                // The last fields of the paths are usually the same, thus only iterate once.
-                break;
+                defsite_upvars2.extend(defsite_upvars);
             }
         }
         // 3.3 Check if upvars of `node1` and `node2` alias with each other.
-        if let (Some(defsite_upvars1), Some(defsite_upvars2)) = (defsite_upvars1, defsite_upvars2) {
+        if !defsite_upvars1.is_empty() && !defsite_upvars2.is_empty() {
             for (instance1, node1) in defsite_upvars1 {
                 for (instance2, node2) in &defsite_upvars2 {
                     if instance1.def_id() == instance2.def_id() {
@@ -1026,17 +1028,12 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
         Some(ApproximateAliasKind::Unlikely)
     }
 
-    /// Suppose _1 is the closure parameter and _9 is the arg in the def fn.
-    /// For upvar _1.0 in the closure, we get _9.0 in the def fn.
-    /// Though PointsToPath enables tracking more fields
-    /// like _1.0.0 -> _9.0.0,
-    /// I find one field is enough for most cases.
     fn closure_defsite_upvars(
         &self,
         closure: &'a Instance<'tcx>,
-        path: PointsToPath<'tcx>,
+        path: &PointsToPath<'tcx>,
     ) -> Option<Vec<(&'a Instance<'tcx>, ConstraintNode<'tcx>)>> {
-        let projection = path.last()?.0;
+        let projection = closure_defsite_projection(path, self.tcx)?;
         let def_inst_args = closure_defsite_args(closure, self.callgraph);
         let def_inst_upvars = def_inst_args
             .into_iter()
@@ -1087,6 +1084,99 @@ fn is_parameter(local: Local, body: &Body<'_>) -> bool {
     body.args_iter().any(|arg| arg == local)
 }
 
+fn point_to_same_projected_alias<'tcx>(
+    pts1: &FxHashSet<ConstraintNode<'tcx>>,
+    pts2: &FxHashSet<ConstraintNode<'tcx>>,
+    points_to_map: &PointsToMap<'tcx>,
+    body: &Body<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> bool {
+    let projected_places1 = pts1.iter().filter_map(projected_place);
+    let mut projected_places2 = pts2.iter().filter_map(projected_place).collect::<Vec<_>>();
+    projected_places1.into_iter().any(|place1| {
+        projected_places2.iter_mut().any(|place2| {
+            place1.projection == place2.projection
+                && place1.ty(body, tcx).ty == place2.ty(body, tcx).ty
+                && local_place_alias(place1.local, place2.local, pts1, pts2, points_to_map)
+        })
+    })
+}
+
+fn projected_place<'tcx>(node: &ConstraintNode<'tcx>) -> Option<PlaceRef<'tcx>> {
+    match node {
+        ConstraintNode::Alloc(place) | ConstraintNode::Place(place)
+            if !place.projection.is_empty() =>
+        {
+            Some(*place)
+        }
+        _ => None,
+    }
+}
+
+fn local_place_alias<'tcx>(
+    local1: Local,
+    local2: Local,
+    pts1: &FxHashSet<ConstraintNode<'tcx>>,
+    pts2: &FxHashSet<ConstraintNode<'tcx>>,
+    points_to_map: &PointsToMap<'tcx>,
+) -> bool {
+    if local1 == local2 {
+        return true;
+    }
+    let local_node1 = ConstraintNode::Place(Place::from(local1).as_ref());
+    let local_node2 = ConstraintNode::Place(Place::from(local2).as_ref());
+    if pts1.contains(&local_node2) || pts2.contains(&local_node1) {
+        return true;
+    }
+    let local_pts1 = points_to_map.get(&local_node1);
+    let local_pts2 = points_to_map.get(&local_node2);
+    matches!((local_pts1, local_pts2), (Some(local_pts1), Some(local_pts2)) if local_pts1.intersection(local_pts2).next().is_some())
+}
+
+fn point_to_same_projected_param<'tcx>(
+    pts1: &FxHashSet<ConstraintNode<'tcx>>,
+    pts2: &FxHashSet<ConstraintNode<'tcx>>,
+    points_to_map1: &PointsToMap<'tcx>,
+    points_to_map2: &PointsToMap<'tcx>,
+    body1: &Body<'tcx>,
+    body2: &Body<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> bool {
+    let projected_places1 = pts1.iter().filter_map(projected_place);
+    let mut projected_places2 = pts2.iter().filter_map(projected_place).collect::<Vec<_>>();
+    projected_places1.into_iter().any(|place1| {
+        projected_places2.iter_mut().any(|place2| {
+            place1.projection == place2.projection
+                && place1.ty(body1, tcx).ty == place2.ty(body2, tcx).ty
+                && projected_base_ty(place1.local, pts1, points_to_map1, body1, tcx)
+                    == projected_base_ty(place2.local, pts2, points_to_map2, body2, tcx)
+        })
+    })
+}
+
+fn projected_base_ty<'tcx>(
+    local: Local,
+    pts: &FxHashSet<ConstraintNode<'tcx>>,
+    points_to_map: &PointsToMap<'tcx>,
+    body: &Body<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> Option<rustc_middle::ty::Ty<'tcx>> {
+    if is_parameter(local, body) {
+        return Some(body.local_decls[local].ty);
+    }
+    let local_node = ConstraintNode::Place(Place::from(local).as_ref());
+    pts.iter()
+        .chain(points_to_map.get(&local_node).into_iter().flatten())
+        .find_map(|node| match node {
+            ConstraintNode::Alloc(place) | ConstraintNode::Place(place)
+                if is_parameter(place.local, body) =>
+            {
+                Some(place.ty(body, tcx).ty)
+            }
+            _ => None,
+        })
+}
+
 /// Check if p1 and p2 point to func parameters with the same local's type and projection.
 /// Return true
 /// if exists a1 in pts(p1) and a1.local is param and
@@ -1130,7 +1220,7 @@ fn closure_defsite_args<'a, 'b: 'a, 'tcx>(
                 .unwrap_or_default()
                 .iter()
                 .filter_map(|cs_loc| {
-                    if let CallSiteLocation::ClosureDef(local) = cs_loc {
+                    if let CallSiteLocation::ClosureDef(local, _) = cs_loc {
                         Some((caller_inst, *local))
                     } else {
                         None
@@ -1142,6 +1232,21 @@ fn closure_defsite_args<'a, 'b: 'a, 'tcx>(
 }
 
 type PointsToPath<'tcx> = Vec<(&'tcx [PlaceElem<'tcx>], ConstraintNode<'tcx>)>;
+
+fn closure_defsite_projection<'tcx>(
+    path: &PointsToPath<'tcx>,
+    tcx: TyCtxt<'tcx>,
+) -> Option<&'tcx [PlaceElem<'tcx>]> {
+    let mut projection = Vec::new();
+    for (segment, _) in path.iter().rev() {
+        projection.extend_from_slice(segment);
+    }
+    if projection.is_empty() {
+        None
+    } else {
+        Some(tcx.mk_place_elems(&projection))
+    }
+}
 
 /// Find the points-to paths from the given node to the closure parameters (upvar).
 /// A points-to path is like [([], node), ([Field(0)], node1), ([Filed(1)], node2), ..., ([Field(n)], parameter)]

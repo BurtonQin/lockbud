@@ -7,6 +7,8 @@
 //! We also track where a closure is defined rather than called
 //! to record the defined function and the parameter of the closure,
 //! which is pointed to by upvars.
+extern crate rustc_data_structures;
+
 use petgraph::algo;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
@@ -28,14 +30,14 @@ pub type InstanceId = NodeIndex;
 #[derive(Copy, Clone, Debug)]
 pub enum CallSiteLocation {
     Direct(Location),
-    ClosureDef(Local),
+    ClosureDef(Local, Option<Location>),
     // Indirect(Location),
 }
 
 impl CallSiteLocation {
     pub fn location(&self) -> Option<Location> {
         match self {
-            Self::Direct(loc) => Some(*loc),
+            Self::Direct(loc) | Self::ClosureDef(_, Some(loc)) => Some(*loc),
             _ => None,
         }
     }
@@ -244,7 +246,7 @@ impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
                             .flatten()
                     {
                         self.callsites
-                            .push((callee_instance, CallSiteLocation::ClosureDef(local)));
+                            .push((callee_instance, CallSiteLocation::ClosureDef(local, None)));
                     }
                 }
             }

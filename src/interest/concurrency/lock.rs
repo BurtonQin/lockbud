@@ -1,11 +1,11 @@
 //! Collect LockGuard info.
-extern crate rustc_hash;
+extern crate rustc_data_structures;
 extern crate rustc_span;
 
 use smallvec::SmallVec;
 use std::cmp::Ordering;
 
-use rustc_hash::FxHashMap;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::{Body, Local, Location, TerminatorKind};
 use rustc_middle::ty::EarlyBinder;

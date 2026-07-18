@@ -12,9 +12,8 @@
 //! atomic.store(v2, order);
 //! ```
 extern crate rustc_data_structures;
-extern crate rustc_hash;
 extern crate rustc_middle;
-use rustc_hash::FxHashMap;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::{BasicBlock, Body, Local, Location, Place, TerminatorKind};
 use rustc_middle::ty::TyCtxt;
 

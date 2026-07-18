@@ -19,7 +19,7 @@ use options::Options;
 use rustc_session::config::ErrorOutputType;
 use rustc_session::EarlyDiagCtxt;
 
-fn main() {
+fn main() -> std::process::ExitCode {
     // Initialize loggers.
     let handler = EarlyDiagCtxt::new(ErrorOutputType::default());
     if std::env::var("RUSTC_LOG").is_ok() {
@@ -88,7 +88,7 @@ fn main() {
         debug!("rustc_command_line_arguments {rustc_command_line_arguments:?}");
         rustc_driver::run_compiler(&rustc_command_line_arguments, &mut callbacks);
     });
-    std::process::exit(exit_code);
+    exit_code
 }
 
 fn find_sysroot() -> String {

@@ -1,12 +1,12 @@
 //! Find atomic functions and classify them into read, write, read-write.
-extern crate rustc_hash;
+extern crate rustc_data_structures;
 extern crate rustc_hir;
 extern crate rustc_middle;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use rustc_hash::FxHashMap;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{GenericArg, Instance, List, TyCtxt};
 
