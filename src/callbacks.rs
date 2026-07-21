@@ -128,7 +128,9 @@ impl LockBudCallbacks {
             DetectorKind::AtomicityViolation => {
                 debug!("Detecting atomicity violation");
                 let mut atomicity_violation_detector = AtomicityViolationDetector::new(tcx);
-                let reports = atomicity_violation_detector.detect(&callgraph, &mut alias_analysis);
+                let reports = filter_std_reports(
+                    atomicity_violation_detector.detect(&callgraph, &mut alias_analysis),
+                );
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
@@ -147,6 +149,7 @@ impl LockBudCallbacks {
                     use_after_free_detector.detect(&callgraph, &mut alias_analysis)
                 };
                 reports.extend(reports2);
+                let reports = filter_std_reports(reports);
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
@@ -163,17 +166,21 @@ impl LockBudCallbacks {
                 }
                 {
                     let mut atomicity_violation_detector = AtomicityViolationDetector::new(tcx);
-                    reports.extend(
+                    reports.extend(filter_std_reports(
                         atomicity_violation_detector.detect(&callgraph, &mut alias_analysis),
-                    );
+                    ));
                 }
                 {
                     let invalid_free_detector = InvalidFreeDetector::new(tcx);
-                    reports.extend(invalid_free_detector.detect(&callgraph, &mut alias_analysis));
+                    reports.extend(filter_std_reports(
+                        invalid_free_detector.detect(&callgraph, &mut alias_analysis),
+                    ));
                 }
                 {
                     let use_after_free_detector = UseAfterFreeDetector::new(tcx);
-                    reports.extend(use_after_free_detector.detect(&callgraph, &mut alias_analysis));
+                    reports.extend(filter_std_reports(
+                        use_after_free_detector.detect(&callgraph, &mut alias_analysis),
+                    ));
                 }
                 if !reports.is_empty() {
                     let j = serde_json::to_string_pretty(&reports).unwrap();
@@ -205,6 +212,39 @@ impl LockBudCallbacks {
             }
         }
     }
+}
+
+fn filter_std_reports(reports: Vec<Report>) -> Vec<Report> {
+    reports
+        .into_iter()
+        .filter(|report| !report_is_from_std(report))
+        .collect()
+}
+
+fn report_is_from_std(report: &Report) -> bool {
+    match report {
+        Report::AtomicityViolation(content) => {
+            is_std_location(&content.diagnosis.atomic_reader)
+                || is_std_location(&content.diagnosis.atomic_writer)
+                || is_std_location(&content.diagnosis.fn_name)
+        }
+        Report::InvalidFree(content) | Report::UseAfterFree(content) => {
+            is_std_location(&content.diagnosis)
+        }
+        _ => false,
+    }
+}
+
+fn is_std_location(s: &str) -> bool {
+    s.contains("/library/std/")
+        || s.contains("/library/core/")
+        || s.contains("/library/alloc/")
+        || s.starts_with("library/std/")
+        || s.starts_with("library/core/")
+        || s.starts_with("library/alloc/")
+        || s.starts_with("std::")
+        || s.starts_with("core::")
+        || s.starts_with("alloc::")
 }
 
 fn report_stats(crate_name: &str, reports: &[Report]) -> String {
@@ -255,9 +295,53 @@ fn report_stats(crate_name: &str, reports: &[Report]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detector::atomic::report::AtomicityViolationDiagnosis;
+    use crate::detector::report::ReportContent;
 
     #[test]
     fn test_report_stats() {
         assert_eq!(report_stats("dummy", &[]), format!("crate {} contains bugs: {{ probably: {}, possibly: {} }}, conflictlock: {{ probably: {}, possibly: {} }}, condvar_deadlock: {{ probably: {}, possibly: {} }}, atomicity_violation: {{ possibly: {} }}, invalid_free: {{ possibly: {} }}, use_after_free: {{ possibly: {} }}", "dummy", 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn test_report_is_from_std_for_atomicity_violation() {
+        let report = Report::AtomicityViolation(ReportContent::new(
+            "AtomicityViolation".to_owned(),
+            "Possibly".to_owned(),
+            AtomicityViolationDiagnosis {
+                fn_name: "core::sync::atomic::AtomicBool::load".to_owned(),
+                atomic_reader: "library/core/src/sync/atomic.rs:100:1".to_owned(),
+                atomic_writer: "src/lib.rs:20:5".to_owned(),
+                dep_kind: "Control".to_owned(),
+            },
+            "atomic::store is data/control dependent on atomic::load".to_owned(),
+        ));
+
+        assert!(report_is_from_std(&report));
+    }
+
+    #[test]
+    fn test_report_is_from_std_for_memory_report() {
+        let report = Report::UseAfterFree(ReportContent::new(
+            "UseAfterFree".to_owned(),
+            "Possibly".to_owned(),
+            "Raw ptr at /rustc/hash/library/alloc/src/vec/mod.rs:1:1 escapes".to_owned(),
+            "Raw ptr is used or escapes the current function after the pointed value is dropped"
+                .to_owned(),
+        ));
+
+        assert!(report_is_from_std(&report));
+    }
+
+    #[test]
+    fn test_filter_std_reports_keeps_project_reports() {
+        let report = Report::InvalidFree(ReportContent::new(
+            "InvalidFree".to_owned(),
+            "Possibly".to_owned(),
+            "src/main.rs:10:5".to_owned(),
+            "Call mem::uninitialized() or MaybeUninit::uninit() followed by assume_init() without actually write on not simple types".to_owned(),
+        ));
+
+        assert_eq!(filter_std_reports(vec![report]).len(), 1);
     }
 }

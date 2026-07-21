@@ -9,12 +9,12 @@ if [ -z "$1" ]; then
         exit 1
 fi
 # Build lockbud
-cargo build
+# cargo build
 # For development of lockbud use debug
-export RUSTC_WRAPPER=${PWD}/target/debug/lockbud
+# export RUSTC_WRAPPER=${PWD}/target/debug/lockbud
 # For usage use release
-# cargo build --release
-# export RUSTC_WRAPPER=${PWD}/target/release/lockbud
+cargo build --release
+export RUSTC_WRAPPER=${PWD}/target/release/lockbud
 export RUST_BACKTRACE=full
 export LOCKBUD_LOG=info
 # To only detect inter,intra
