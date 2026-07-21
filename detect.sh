@@ -3,9 +3,23 @@
 # this script's location
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ -z "$1" ]; then
+recursive=false
+while [ $# -gt 0 ]; do
+        case "$1" in
+                -r|--recursive)
+                        recursive=true
+                        shift
+                        ;;
+                *)
+                        detecting_dir="$1"
+                        shift
+                        ;;
+        esac
+done
+
+if [ -z "${detecting_dir:-}" ]; then
         echo "No detecting directory is provided"
-	echo "Usage: ./detect.sh DIRNAME"
+        echo "Usage: ./detect.sh [-r|--recursive] DIRNAME"
         exit 1
 fi
 # Build lockbud
@@ -29,29 +43,14 @@ export LOCKBUD_LOG=info
 #export LOCKBUD_FLAGS="-k atomicity_violation"
 #export LOCKBUD_FLAGS="-k memory"
 #export LOCKBUD_FLAGS="-k panic"
-export LOCKBUD_FLAGS="-k all"
 
-# Find all Cargo.tomls recursively under the detecting directory
-# and record them in cargo_dir.txt
-cargo_dir_file=$(realpath $DIR/cargo_dir.txt)
-rm -f $cargo_dir_file
-touch $cargo_dir_file
-
-pushd "$1" > /dev/null
+pushd "${detecting_dir}" > /dev/null
+if [ "${recursive}" = true ]; then
+        export LOCKBUD_FLAGS=${LOCKBUD_FLAGS:-"-k all"}
+else
+        crate_name=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; data = json.load(sys.stdin); print(data["packages"][0]["name"])')
+        export LOCKBUD_FLAGS=${LOCKBUD_FLAGS:-"-k all -l ${crate_name}"}
+fi
 cargo clean
-cargo_tomls=$(find . -name "Cargo.toml")
-for cargo_toml in ${cargo_tomls[@]}
-do
-        echo $(dirname $cargo_toml) >> $cargo_dir_file
-done
-
-IFS=$'\n' read -d '' -r -a lines < ${cargo_dir_file}
-for cargo_dir in ${lines[@]}
-do
-        pushd ${cargo_dir} > /dev/null
-        cargo build
-        popd > /dev/null
-done
+cargo build
 popd > /dev/null
-
-rm -f $cargo_dir_file
