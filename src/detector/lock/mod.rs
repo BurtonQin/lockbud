@@ -21,7 +21,7 @@ use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeRe
 use petgraph::{Directed, Direction, Graph};
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_middle::mir::{Body, Location, Operand, TerminatorKind};
+use rustc_middle::mir::{BasicBlock, Body, Local, Location, Operand, StatementKind, TerminatorKind};
 use rustc_middle::ty::{TyCtxt, TypingEnv};
 
 use std::collections::VecDeque;
@@ -592,8 +592,14 @@ impl<'tcx> DeadlockDetector<'tcx> {
                         block: succ_bb,
                         statement_index: 0,
                     };
+                    let mut state = after.clone();
+                    if let Some(local) = flag_skipped_drop(body, loc.block, succ_bb) {
+                        state
+                            .0
+                            .retain(|id| !(id.local == local && lockguard_info.contains_key(id)));
+                    }
                     // union and reprocess if changed
-                    let changed = states.get_mut(&succ).unwrap().union_in_place(after.clone());
+                    let changed = states.get_mut(&succ).unwrap().union_in_place(state);
                     if changed {
                         worklist.push_back(succ);
                     }
@@ -693,6 +699,33 @@ enum NotDeadlockReason {
 /// Check deadlock possibility.
 /// for two lockguards, first check if their types may deadlock;
 /// if so, then check if they may alias.
+/// Drop elaboration releases a maybe-moved guard behind its drop flag:
+/// `switchInt(flag) -> [0: next, otherwise: d]` where `d` only runs `drop(guard) -> next`.
+/// The `0` edge is taken only after the guard was moved out, so it is not live there.
+fn flag_skipped_drop(body: &Body<'_>, block: BasicBlock, succ: BasicBlock) -> Option<Local> {
+    let TerminatorKind::SwitchInt { targets, .. } = &body[block].terminator().kind else {
+        return None;
+    };
+    if targets.all_targets().len() != 2 || targets.target_for_value(0) != succ {
+        return None;
+    }
+    let dropping = &body[targets.otherwise()];
+    let only_storage = dropping.statements.iter().all(|statement| {
+        matches!(
+            statement.kind,
+            StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop
+        )
+    });
+    match &dropping.terminator().kind {
+        TerminatorKind::Drop { place, target, .. }
+            if *target == succ && only_storage && place.projection.is_empty() =>
+        {
+            Some(place.local)
+        }
+        _ => None,
+    }
+}
+
 fn deadlock_possibility(
     a: &LockGuardId,
     b: &LockGuardId,
