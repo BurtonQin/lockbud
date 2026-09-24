@@ -631,9 +631,12 @@ impl<'tcx> Visitor<'tcx> for ConstraintGraphCollector<'_, 'tcx> {
                 (&[Operand::Move(arg), _], dest) => {
                     let func_ty = func.ty(self.body, self.tcx);
                     if let TyKind::FnDef(def_id, _) = func_ty.kind() {
-                        if ownership::is_index(*def_id, self.tcx) {
-                            // index(arg0, arg1)
-                            // e.g., <String as Index<std::ops::Range<usize>>>::index(move _97, move _98)
+                        // index(arg0, arg1)
+                        // e.g., <String as Index<std::ops::Range<usize>>>::index(move _97, move _98)
+                        // or a payload passthrough, e.g., Result::expect(move _5, const "msg")
+                        if ownership::is_index(*def_id, self.tcx)
+                            || ownership::is_payload_passthrough(*def_id, self.tcx)
+                        {
                             self.process_call_arg_dest(arg.as_ref(), dest.as_ref())
                         }
                     }
