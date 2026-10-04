@@ -21,7 +21,9 @@ use petgraph::visit::{depth_first_search, Control, DfsEvent, EdgeRef, IntoNodeRe
 use petgraph::{Directed, Direction, Graph};
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_middle::mir::{BasicBlock, Body, Local, Location, Operand, StatementKind, TerminatorKind};
+use rustc_middle::mir::{
+    BasicBlock, Body, Local, Location, Operand, StatementKind, TerminatorKind,
+};
 use rustc_middle::ty::{TyCtxt, TypingEnv};
 
 use std::collections::VecDeque;
@@ -240,6 +242,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
     /// - std::sync::Condvar::notify(&Condvar)
     /// - parking_lot::Condvar::wait(&Condvar, &mut MutexGuard)
     /// - parking_lot::Condvar::notify(&Condvar)
+    ///
     /// Then match `wait` and `notify` if their Condvars alias with each other.
     /// Finally check LiveLockGuards before `wait` and `notify`:
     /// if they have aliasing LockGuards that are not aliased with MutexGuard in `wait` then possibly deadlock

@@ -104,6 +104,7 @@ impl<'tcx> UseAfterFreeDetector<'tcx> {
 /// Alloc(ptr) pointed to by ConstantDeref implies Place(ptr) escapes to Global.
 /// 1. forall c is ConstantDeref, collect pts(c) into S
 /// 2. find Alloc(ptr) in S and map it to Place(ptr)
+///
 /// Returns (Place(ptr), c)
 fn collect_raw_ptrs_escape_to_global<'tcx>(
     pts: &PointsToMap<'tcx>,

@@ -923,6 +923,7 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
     /// 1. they point to the same Constant or
     /// 2. they point to function parameters with the same type and field or
     /// 3. they point to upvars of closures and the upvars alias in the def func.
+    ///
     /// Formally,
     /// if exists a1 in pts(p1) and a1 is Constant(c1) and
     ///    exists a2 in pts(p2) and a2 is Constant(c2) and

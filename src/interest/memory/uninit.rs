@@ -2,6 +2,7 @@
 //! 1. _1 = uninitialized::<Vec<i32>>() -> bb1;
 //! 2. _1 = MaybeUninit::<Vec<i32>>::uninit() -> bb1;
 //! 3. _2 = MaybeUninit::<Vec<i32>>::assume_init(move _1) -> bb4;
+//!
 //! initialize:
 //! 1. _2 = MaybeUninit::<Vec<i32>>::write(move _3, move _4) -> bb3;
 //! 2. _2 = MaybeUninit::<Obj>::as_mut_ptr(move _3) -> bb2;
