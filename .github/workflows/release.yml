@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches Cargo.toml version
+        shell: bash
+        run: |
+          cargo_version=$(sed -n 's/^version *= *"\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "::error::Tag v$tag_version does not match Cargo.toml version $cargo_version."
+            echo "Bump the version in Cargo.toml (or move/re-point the tag) before releasing."
+            exit 1
+          fi
+      - uses: ./.github/actions/setup-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binaries
+        run: cargo build --release
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          staging="lockbud-${version}-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp target/release/lockbud target/release/cargo-lockbud "$staging/"
+          cp README.md LICENSE "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+          echo "ASSET=$staging.tar.gz" >> "$GITHUB_ENV"
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          generate_release_notes: true

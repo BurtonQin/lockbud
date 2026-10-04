@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint (rustfmt + clippy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --workspace
+
+  smoke:
+    name: Smoke test (toys/inter deadlock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Build lockbud (release)
+        run: cargo build --release
+      - name: Run detect.sh on toys/inter
+        run: |
+          set -euo pipefail
+          ./detect.sh toys/inter 2>&1 | tee smoke-output.log
+      - name: Check that deadlock reports are produced
+        run: |
+          count=$(grep -c '"DoubleLock"' smoke-output.log || true)
+          echo "DoubleLock occurrences: $count"
+          if [ "$count" -lt 1 ]; then
+            echo "::error::Expected deadlock (DoubleLock) reports for toys/inter, got none."
+            exit 1
+          fi
+
+  toolchain-docs:
+    name: README toolchain version in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check README mentions the pinned nightly
+        run: |
+          toolchain=$(sed -n 's/^channel *= *"\(.*\)"$/\1/p' rust-toolchain.toml)
+          if ! grep -q "$toolchain" README.md; then
+            echo "::error::README.md does not mention the pinned toolchain '$toolchain'."
+            echo "When bumping the nightly, update rust-toolchain.toml, README.md and rebuild/fix the detectors."
+            exit 1
+          fi
+          echo "README.md mentions $toolchain"

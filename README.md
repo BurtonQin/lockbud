@@ -1,4 +1,6 @@
 # lockbud
+[![CI](https://github.com/BurtonQin/lockbud/actions/workflows/ci.yml/badge.svg)](https://github.com/BurtonQin/lockbud/actions/workflows/ci.yml)
+
 Statically detect memory, concurrency bugs and possible panic locations for Rust.
 
 ## Introduction
@@ -259,6 +261,9 @@ The purpose of this project is to provide a tool for detecting and identifying p
 The authors and contributors of this project do not endorse or encourage the use of this tool for any unlawful or unethical purposes, such as hacking, breaking into systems, or exploiting vulnerabilities without authorization. Users of this tool are solely responsible for their actions and the consequences thereof.
 
 By using this open-source project, you acknowledge and agree to the terms of this disclaimer. If you do not agree with the terms of this disclaimer, you should not use this project.
+
+## Contributing
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, commit message convention, and pull request guidelines. Bugs and false positives can be reported through the issue templates.
 
 ## License
 The lockbud Project is licensed under BSD-3.

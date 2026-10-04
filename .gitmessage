@@ -1,0 +1,16 @@
+# <type>(<scope>): <summary>
+#
+# <type>: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+# <scope> (optional): deadlock | atomicity | memory | panic | pointsto | options | toys | toolchain | docs
+#
+# Summary: imperative mood, no trailing period, <= 72 chars.
+#
+# Body (optional): explain WHY the change is needed; wrap at 72 chars.
+# Reference issues with "Fixes #123".
+#
+# Example:
+# fix(deadlock): carry lock guards through Result methods
+#
+# Guards produced by Result::unwrap / Option helpers were previously
+# dropped in the points-to graph, missing self-deadlocks through those
+# paths. Fixes #121

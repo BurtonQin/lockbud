@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a false positive, false negative, crash, or build failure in lockbud
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue!
+        Please fill in the details below — a minimal reproducer is the most important part.
+  - type: input
+    id: lockbud-version
+    attributes:
+      label: lockbud version / commit
+      description: Output of `lockbud -V`, or the commit you built from.
+      placeholder: e.g. 646e0ff or 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: rustc-version
+    attributes:
+      label: rustc version
+      description: Output of `rustc -vV` in the project being analyzed. It must match the nightly pinned by lockbud.
+      placeholder: e.g. rustc 1.94.0-nightly (nightly-2026-02-07)
+    validations:
+      required: true
+  - type: dropdown
+    id: detector
+    attributes:
+      label: Detector kind
+      description: The `-k` flag you used.
+      options:
+        - deadlock (-k deadlock)
+        - atomicity_violation (-k atomicity_violation)
+        - memory (-k memory)
+        - panic (-k panic)
+        - all (-k all)
+        - build failure / other
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest crate that triggers the issue, plus the exact command you ran
+        (e.g. `./detect.sh <dir>` or `RUSTC_WRAPPER=... cargo build` with your `LOCKBUD_FLAGS`).
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Full lockbud output (JSON report or build error), including log lines with LOCKBUD_LOG=info.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: For false positives, explain why the reported code is actually safe. For false negatives, show the bug that should have been reported.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Rust version constraints, real-world crates affected, panics/backtraces, etc. (optional)

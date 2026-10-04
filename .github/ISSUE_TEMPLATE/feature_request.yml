@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a new detector, bug pattern, analysis improvement, or tooling change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What bug pattern, use case, or workflow is not covered today? Link real-world code if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should lockbud do? Sketch the detector behavior, CLI, or output format you expect.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other tools, workarounds, or designs you considered. (optional)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Papers, related issues, example MIR snippets, etc. (optional)

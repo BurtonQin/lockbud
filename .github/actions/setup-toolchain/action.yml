@@ -1,0 +1,23 @@
+name: 'Set up pinned Rust toolchain'
+description: >-
+  Installs the nightly toolchain pinned in rust-toolchain.toml (with the
+  rustc-private components lockbud needs) and makes it the rustup default.
+  CI always follows rust-toolchain.toml, so bumping the nightly only
+  requires changing that file.
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install pinned toolchain
+      shell: bash
+      run: |
+        toolchain=$(sed -n 's/^channel *= *"\(.*\)"$/\1/p' "${GITHUB_WORKSPACE}/rust-toolchain.toml")
+        if [ -z "$toolchain" ]; then
+          echo "::error::Could not read 'channel' from rust-toolchain.toml"
+          exit 1
+        fi
+        echo "Installing pinned toolchain: $toolchain"
+        rustup toolchain install "$toolchain" --profile minimal \
+          --component rustfmt clippy rustc-dev llvm-tools rust-src
+        rustup default "$toolchain"
+        rustc --version
