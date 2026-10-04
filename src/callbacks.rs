@@ -4,6 +4,7 @@ extern crate rustc_driver;
 extern crate rustc_hir;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use crate::analysis::pointsto::AliasAnalysis;
 use crate::detector::memory::{InvalidFreeDetector, UseAfterFreeDetector};
@@ -22,25 +23,30 @@ use crate::detector::lock::DeadlockDetector;
 use crate::detector::panic::PanicDetector;
 use crate::detector::report::Report;
 
-pub struct LockBudCallbacks {
+pub struct LockBudCallbacks<'a> {
     options: Options,
     file_name: String,
     output_directory: PathBuf,
     test_run: bool,
+    /// Set when this compilation produced at least one bug report. Shared
+    /// with the driver entry point so it can turn detections into a
+    /// non-zero exit code (`--exit-code-on-bug`).
+    found_bug: &'a AtomicBool,
 }
 
-impl LockBudCallbacks {
-    pub fn new(options: Options) -> Self {
+impl<'a> LockBudCallbacks<'a> {
+    pub fn new(options: Options, found_bug: &'a AtomicBool) -> Self {
         Self {
             options,
             file_name: String::new(),
             output_directory: PathBuf::default(),
             test_run: false,
+            found_bug,
         }
     }
 }
 
-impl rustc_driver::Callbacks for LockBudCallbacks {
+impl rustc_driver::Callbacks for LockBudCallbacks<'_> {
     fn config(&mut self, config: &mut rustc_interface::interface::Config) {
         self.file_name = "<rustc input>".to_owned();
         debug!("Processing input file: {}", self.file_name);
@@ -82,7 +88,7 @@ impl rustc_driver::Callbacks for LockBudCallbacks {
     }
 }
 
-impl LockBudCallbacks {
+impl LockBudCallbacks<'_> {
     fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
@@ -124,6 +130,8 @@ impl LockBudCallbacks {
                 let mut deadlock_detector = DeadlockDetector::new(tcx, typing_env);
                 let reports = deadlock_detector.detect(&callgraph, &mut alias_analysis);
                 if !reports.is_empty() {
+                    self.found_bug
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
                     let stats = report_stats(&crate_name, &reports);
@@ -137,6 +145,8 @@ impl LockBudCallbacks {
                     atomicity_violation_detector.detect(&callgraph, &mut alias_analysis),
                 );
                 if !reports.is_empty() {
+                    self.found_bug
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
                     let stats = report_stats(&crate_name, &reports);
@@ -156,6 +166,8 @@ impl LockBudCallbacks {
                 reports.extend(reports2);
                 let reports = filter_std_reports(reports);
                 if !reports.is_empty() {
+                    self.found_bug
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
                     let stats = report_stats(&crate_name, &reports);
@@ -188,6 +200,8 @@ impl LockBudCallbacks {
                     ));
                 }
                 if !reports.is_empty() {
+                    self.found_bug
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     let j = serde_json::to_string_pretty(&reports).unwrap();
                     warn!("{}", j);
                     let stats = report_stats(&crate_name, &reports);

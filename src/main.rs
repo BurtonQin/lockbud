@@ -35,6 +35,8 @@ fn main() -> std::process::ExitCode {
     let options = Options::parse_from_str(&std::env::var("LOCKBUD_FLAGS").unwrap_or_default())
         .unwrap_or_default();
     debug!("LOCKBUD options from environment: {options:?}");
+    let exit_code_on_bug = options.exit_code_on_bug;
+    let found_bug = std::sync::atomic::AtomicBool::new(false);
     let mut args = std::env::args_os()
         .enumerate()
         .map(|(i, arg)| {
@@ -84,10 +86,13 @@ fn main() -> std::process::ExitCode {
             }
         }
 
-        let mut callbacks = callbacks::LockBudCallbacks::new(options);
+        let mut callbacks = callbacks::LockBudCallbacks::new(options, &found_bug);
         debug!("rustc_command_line_arguments {rustc_command_line_arguments:?}");
         rustc_driver::run_compiler(&rustc_command_line_arguments, &mut callbacks);
     });
+    if exit_code_on_bug && found_bug.load(std::sync::atomic::Ordering::SeqCst) {
+        return std::process::ExitCode::FAILURE;
+    }
     exit_code
 }
 
