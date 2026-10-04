@@ -17,7 +17,9 @@ runs:
           exit 1
         fi
         echo "Installing pinned toolchain: $toolchain"
-        rustup toolchain install "$toolchain" --profile minimal \
-          --component rustfmt clippy rustc-dev llvm-tools rust-src
+        # `rustup toolchain install --component` only takes a single component per
+        # flag, so add the components in a separate step instead.
+        rustup toolchain install "$toolchain" --profile minimal
+        rustup component add --toolchain "$toolchain" rustfmt clippy rustc-dev llvm-tools rust-src
         rustup default "$toolchain"
         rustc --version
