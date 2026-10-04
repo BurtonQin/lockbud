@@ -89,12 +89,12 @@ impl<'tcx> UseAfterFreeDetector<'tcx> {
 
     fn collect_drops(
         &self,
-        body: &Body<'tcx>,
+        body: &'tcx Body<'tcx>,
         manual_drops: &[(Location, Place<'tcx>)],
     ) -> Vec<(Location, Place<'tcx>)> {
-        let mut collector = AutoDropCollector::new();
+        let mut collector = AutoDropCollector::new(self.tcx, body);
         collector.visit_body(body);
-        let mut drops = collector.finish();
+        let mut drops = super::filter_moved_out_drops(collector.finish(), body);
         drops.extend(manual_drops.iter().cloned());
         drops
     }

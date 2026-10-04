@@ -119,9 +119,9 @@ impl<'tcx> InvalidFreeDetector<'tcx> {
         let mut maybe_uninits = Vec::new();
         let mut assume_inits = Vec::new();
         let mut writes = Vec::new();
-        let mut auto_drop_collector = AutoDropCollector::new();
+        let mut auto_drop_collector = AutoDropCollector::new(self.tcx, body);
         auto_drop_collector.visit_body(body);
-        let mut drops = auto_drop_collector.finish();
+        let mut drops = super::filter_moved_out_drops(auto_drop_collector.finish(), body);
         drops.extend(manual_drops.iter().cloned());
         for (loc, api, _callee_id) in callsites {
             let loc = *loc;
