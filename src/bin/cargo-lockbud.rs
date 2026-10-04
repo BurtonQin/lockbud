@@ -15,7 +15,9 @@ Common options:
     -k, --detector-kind      Choose detector, deadlock
     -b, --blacklist-mode     Use crate-name-list as blacklist, whitelist if not specified
     -l, --crate-name-list    Will not white-or-black list the crates if not specified.
-    
+    --exit-code-on-bug       `cargo lockbud` exits with a non-zero code when
+                             at least one bug is reported (for CI pipelines).
+
 Options after the first "--" are the same arguments that `cargo build` accepts.
 
 Examples:

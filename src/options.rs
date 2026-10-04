@@ -3,6 +3,7 @@
 //! `--blacklist-mode` or `-b`, sets backlist than the default whitelist.
 //! `--crate-name-list [crate1,crate2]` or `-l`, white or black lists of crates decided by `-b`.
 //! if `-l` not specified, then do not white-or-black list the crates.
+//! `--exit-code-on-bug`, exit with a non-zero code when at least one bug is reported.
 use clap::{Arg, ArgAction, Command};
 use std::error::Error;
 
@@ -57,12 +58,21 @@ fn make_options_parser() -> Command {
                 .num_args(1)
                 .help("The crate names seperated by ,"),
         )
+        .arg(
+            Arg::new("exit_code_on_bug")
+                .long("exit-code-on-bug")
+                .action(ArgAction::SetTrue)
+                .help("Exit with a non-zero code when at least one bug is reported"),
+        )
 }
 
 #[derive(Debug)]
 pub struct Options {
     pub detector_kind: DetectorKind,
     pub crate_name_list: CrateNameList,
+    /// Exit the compiler with a non-zero code when at least one bug is
+    /// reported, so CI pipelines can fail on detections.
+    pub exit_code_on_bug: bool,
 }
 
 impl Default for Options {
@@ -70,6 +80,7 @@ impl Default for Options {
         Options {
             detector_kind: DetectorKind::Deadlock,
             crate_name_list: CrateNameList::Black(Vec::new()),
+            exit_code_on_bug: false,
         }
     }
 }
@@ -106,6 +117,7 @@ impl Options {
         Ok(Options {
             detector_kind,
             crate_name_list,
+            exit_code_on_bug: matches.get_flag("exit_code_on_bug"),
         })
     }
 }
@@ -130,6 +142,14 @@ mod tests {
         assert!(
             matches!(options.crate_name_list, CrateNameList::White(v) if v == vec!["cc".to_owned(), "tokio_util".to_owned(), "indicatif".to_owned()])
         );
+    }
+
+    #[test]
+    fn test_parse_from_str_exit_code_on_bug() {
+        let options = Options::parse_from_str("-k deadlock --exit-code-on-bug").unwrap();
+        assert!(options.exit_code_on_bug);
+        let options = Options::parse_from_str("-k deadlock").unwrap();
+        assert!(!options.exit_code_on_bug);
     }
 
     #[test]
