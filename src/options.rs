@@ -3,7 +3,7 @@
 //! `--blacklist-mode` or `-b`, sets backlist than the default whitelist.
 //! `--crate-name-list [crate1,crate2]` or `-l`, white or black lists of crates decided by `-b`.
 //! if `-l` not specified, then do not white-or-black list the crates.
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use std::error::Error;
 
 #[derive(Debug)]
@@ -29,33 +29,34 @@ pub enum DetectorKind {
     // More to be supported.
 }
 
-fn make_options_parser<'help>() -> Command<'help> {
-    let parser = Command::new("LOCKBUD")
+fn make_options_parser() -> Command {
+    Command::new("LOCKBUD")
         .no_binary_name(true)
         .version("v0.2.0")
         .arg(
             Arg::new("kind")
                 .short('k')
                 .long("detector-kind")
-                .possible_values(["deadlock", "atomicity_violation", "memory", "all", "panic"])
-                .default_values(&["deadlock"])
+                .action(ArgAction::Set)
+                .value_parser(["deadlock", "atomicity_violation", "memory", "all", "panic"])
+                .default_value("deadlock")
                 .help("The detector kind"),
         )
         .arg(
             Arg::new("black")
                 .short('b')
                 .long("blacklist-mode")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("set `crates` as blacklist than whitelist"),
         )
         .arg(
             Arg::new("crates")
                 .short('l')
                 .long("crate-name-list")
-                .takes_value(true)
+                .action(ArgAction::Set)
+                .num_args(1)
                 .help("The crate names seperated by ,"),
-        );
-    parser
+        )
 }
 
 #[derive(Debug)]
@@ -82,7 +83,7 @@ impl Options {
     pub fn parse_from_args(flags: &[String]) -> Result<Self, Box<dyn Error>> {
         let app = make_options_parser();
         let matches = app.try_get_matches_from(flags.iter())?;
-        let detector_kind = match matches.value_of("kind") {
+        let detector_kind = match matches.get_one::<String>("kind").map(String::as_str) {
             Some("deadlock") => DetectorKind::Deadlock,
             Some("atomicity_violation") => DetectorKind::AtomicityViolation,
             Some("memory") => DetectorKind::Memory,
@@ -90,9 +91,9 @@ impl Options {
             Some("panic") => DetectorKind::Panic,
             _ => return Err("UnsupportedDetectorKind")?,
         };
-        let black = matches.is_present("black");
+        let black = matches.get_flag("black");
         let crate_name_list = matches
-            .value_of("crates")
+            .get_one::<String>("crates")
             .map(|crates| {
                 let crates: Vec<String> = crates.split(',').map(|s| s.into()).collect();
                 if black {
