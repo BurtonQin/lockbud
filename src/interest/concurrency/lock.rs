@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
-use rustc_middle::mir::{Body, Local, Location, TerminatorKind};
+use rustc_middle::mir::{Body, Local, Location, Operand, Place, Rvalue, TerminatorKind};
 use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{self, Instance, TyCtxt, TypingEnv};
 use rustc_span::Span;
@@ -15,7 +15,7 @@ use rustc_span::Span;
 use crate::analysis::callgraph::InstanceId;
 
 /// Uniquely identify a LockGuard in a crate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LockGuardId {
     pub instance_id: InstanceId,
     pub local: Local,
@@ -189,6 +189,10 @@ pub struct LockGuardInfo<'tcx> {
     pub move_gen_locs: SmallVec<[Location; 4]>,
     pub recursive_gen_locs: SmallVec<[Location; 4]>,
     pub kill_locs: SmallVec<[Location; 4]>,
+    /// If this guard is only ever assigned by moving another guard local,
+    /// that source local: the two hold the same lock acquisition, so the
+    /// moved guard is an alias of its source rather than a new acquisition.
+    pub move_source: Option<Local>,
 }
 
 impl<'tcx> LockGuardInfo<'tcx> {
@@ -200,6 +204,7 @@ impl<'tcx> LockGuardInfo<'tcx> {
             move_gen_locs: Default::default(),
             recursive_gen_locs: Default::default(),
             kill_locs: Default::default(),
+            move_source: None,
         }
     }
 
@@ -260,6 +265,27 @@ impl<'a, 'b, 'tcx> LockGuardCollector<'a, 'b, 'tcx> {
 }
 
 impl<'tcx> Visitor<'tcx> for LockGuardCollector<'_, '_, 'tcx> {
+    fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>, location: Location) {
+        // `let new_guard = old_guard;` moves one guard local into another.
+        // Record the source so the moved guard can be treated as an alias
+        // of the guard whose lock call produced the acquisition.
+        if let Rvalue::Use(Operand::Move(src)) = rvalue {
+            if src.projection.is_empty() {
+                let dst = LockGuardId::new(self.instance_id, place.local);
+                let src_id = LockGuardId::new(self.instance_id, src.local);
+                if place.local != src.local
+                    && self.lockguards.contains_key(&dst)
+                    && self.lockguards.contains_key(&src_id)
+                {
+                    if let Some(info) = self.lockguards.get_mut(&dst) {
+                        info.move_source = Some(src.local);
+                    }
+                }
+            }
+        }
+        self.super_assign(place, rvalue, location);
+    }
+
     fn visit_local(&mut self, local: Local, context: PlaceContext, location: Location) {
         let lockguard_id = LockGuardId::new(self.instance_id, local);
         // local is lockguard
