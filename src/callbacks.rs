@@ -86,11 +86,16 @@ impl LockBudCallbacks {
     fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
+        // Users specify package names (e.g. `foo-bar`), but rustc crate names
+        // replace hyphens with underscores (e.g. `foo_bar`).
+        let in_list = |names: &Vec<String>| {
+            names
+                .iter()
+                .any(|name| name.replace('-', "_") == crate_name)
+        };
         match &self.options.crate_name_list {
-            CrateNameList::White(crates) if !crates.is_empty() && !crates.contains(&crate_name) => {
-                return
-            }
-            CrateNameList::Black(crates) if crates.contains(&crate_name) => return,
+            CrateNameList::White(crates) if !crates.is_empty() && !in_list(crates) => return,
+            CrateNameList::Black(crates) if in_list(crates) => return,
             _ => {}
         };
         if tcx.sess.opts.unstable_opts.no_codegen || !tcx.sess.opts.output_types.should_codegen() {
