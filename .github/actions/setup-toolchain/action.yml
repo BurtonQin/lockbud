@@ -22,4 +22,9 @@ runs:
         rustup toolchain install "$toolchain" --profile minimal
         rustup component add --toolchain "$toolchain" rustfmt clippy rustc-dev llvm-tools rust-src
         rustup default "$toolchain"
+        # The lockbud binary links against librustc_driver from the pinned
+        # toolchain and embeds no rpath, so every later step that runs the
+        # wrapper needs the toolchain lib dir on the loader path.
+        sysroot_lib="$(rustc --print sysroot)/lib"
+        echo "LD_LIBRARY_PATH=${sysroot_lib}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         rustc --version
