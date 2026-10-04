@@ -46,3 +46,20 @@ pub fn is_ptr_read(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 pub fn is_index(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     tcx.def_path_str(def_id).ends_with("::index")
 }
+
+/// `Result` and `Option` methods whose output carries the receiver's payload,
+/// e.g., `lock().expect(..)` or `lock().unwrap_or_else(PoisonError::into_inner)`.
+pub fn is_payload_passthrough(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    const METHODS: [&str; 7] = [
+        "::expect",
+        "::unwrap_or",
+        "::unwrap_or_else",
+        "::map_err",
+        "::or_else",
+        "::ok_or",
+        "::ok_or_else",
+    ];
+    let path = tcx.def_path_str(def_id);
+    (path.contains("Result::<") || path.contains("Option::<"))
+        && METHODS.iter().any(|method| path.ends_with(method))
+}
