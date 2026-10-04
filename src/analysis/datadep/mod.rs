@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_index::IndexVec;
 use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, Local, Location, Place, Rvalue};
+use rustc_middle::mir::{Body, Local, Location, Place, Rvalue, Terminator, TerminatorKind};
 
 pub fn all_data_dep_on(a: Local, data_deps: &DataDeps) -> FxHashSet<Local> {
     let mut worklist = VecDeque::from_iter(data_deps.immediate_dep(a));
@@ -76,5 +76,24 @@ impl<'tcx> Visitor<'tcx> for DataDeps {
             _ => {}
         }
         self.super_assign(place, rvalue, location);
+    }
+
+    fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
+        // `let v3 = v.wrapping_add(1)` lowers to a Call terminator, not an
+        // assignment statement, so the data dependence of the destination on
+        // the argument locals must be recorded here. Whether such a call is
+        // MIR-inlined into an arithmetic statement varies across rustc
+        // versions and editions, so both forms must be covered.
+        if let TerminatorKind::Call {
+            args, destination, ..
+        } = &terminator.kind
+        {
+            for arg in args {
+                if let Some(arg_place) = arg.node.place() {
+                    self.immediate_deps[arg_place.local][destination.local] = true;
+                }
+            }
+        }
+        self.super_terminator(terminator, location);
     }
 }
