@@ -26,7 +26,7 @@ use rustc_middle::mir::{
 };
 use rustc_middle::ty::{TyCtxt, TypingEnv};
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 
 use self::report::{CondvarDeadlockDiagnosis, WaitNotifyLocks};
 
@@ -624,12 +624,33 @@ impl<'tcx> DeadlockDetector<'tcx> {
         let mut reports = Vec::new();
         let mut conflictlock_graph = ConflictLockGraph::new();
         let mut relation_to_nodes = FxHashMap::default();
+        // Canonicalize relations: a guard that is only ever moved in holds
+        // the very acquisition of the guard it was moved from, so collapse
+        // both sides onto the guard produced by a lock call. This keeps a
+        // renamed guard's lock-order edges in the conflict graph and makes
+        // the move site report under the real acquisition's spans instead
+        // of as another acquisition (#129, #130).
+        let mut canonical_relations: Vec<(LockGuardId, LockGuardId)> = Vec::new();
+        let mut seen: FxHashSet<(LockGuardId, LockGuardId)> = FxHashSet::default();
+        for (a, b) in &self.lockguard_relations {
+            let ca = canonical_guard(*a, lockguards);
+            let cb = canonical_guard(*b, lockguards);
+            if ca != cb && seen.insert((ca, cb)) {
+                canonical_relations.push((ca, cb));
+            }
+        }
         // Detect doublelock:
         // forall relation(a, b): deadlock(a, b) => doublelock(a, b)
-        for (a, b) in &self.lockguard_relations {
+        for (a, b) in &canonical_relations {
             let (possibility, reason) = deadlock_possibility(a, b, lockguards, alias_analysis);
+            // A guard that is only ever moved in (never produced by a lock
+            // call) does not acquire a lock itself; its lock was already
+            // acquired by the guard it was moved from, and that acquisition
+            // is reported through the source relation. Reporting the moved
+            // guard would duplicate the same doublelock at the move site.
+            let b_acquires = !lockguards[b].is_gen_only_by_move();
             match possibility {
-                DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {
+                DeadlockPossibility::Probably | DeadlockPossibility::Possibly if b_acquires => {
                     let diagnosis = diagnose_doublelock(a, b, lockguards, callgraph, self.tcx);
                     let report = Report::DoubleLock(ReportContent::new(
                         "DoubleLock".to_owned(),
@@ -639,16 +660,18 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     ));
                     reports.push(report);
                 }
+                // A relation whose second guard is moved in duplicates the
+                // source guard's relation; skip it entirely.
+                DeadlockPossibility::Probably | DeadlockPossibility::Possibly => {}
                 _ if NotDeadlockReason::RecursiveRead != reason
                     && NotDeadlockReason::SameSpan != reason =>
                 {
-                    // if unlikely doublelock, add the pair into graph to check conflictlock
-                    // when the lockguards are gen by call rather than move
-                    if !lockguards[a].is_gen_only_by_move() && !lockguards[b].is_gen_only_by_move()
-                    {
-                        let node = conflictlock_graph.add_node((*a, *b));
-                        relation_to_nodes.insert((*a, *b), node);
-                    }
+                    // if unlikely doublelock, add the pair into graph to check conflictlock.
+                    // A moved guard still holds its lock, so relations through
+                    // it are real lock-order edges even though it never
+                    // acquired the lock itself.
+                    let node = conflictlock_graph.add_node((*a, *b));
+                    relation_to_nodes.insert((*a, *b), node);
                 }
                 _ => {}
             }
@@ -671,7 +694,21 @@ impl<'tcx> DeadlockDetector<'tcx> {
             }
         }
         let cycle_paths = conflictlock_graph.cycle_paths();
+        // Different cycle paths may denote the same conflict: e.g. a guard
+        // renamed by a move adds a parallel relation to the same lock pair,
+        // and petgraph enumerates every simple path. Deduplicate by the set
+        // of guards a cycle involves, so one logical conflict yields one
+        // report regardless of how many relation paths express it.
+        let mut seen_cycle_guards: FxHashSet<BTreeSet<LockGuardId>> = FxHashSet::default();
         for path in cycle_paths {
+            let guard_set: BTreeSet<LockGuardId> = path
+                .iter()
+                .filter_map(|relation_id| conflictlock_graph.node_weight(*relation_id))
+                .flat_map(|(a, b)| [*a, *b])
+                .collect();
+            if !seen_cycle_guards.insert(guard_set) {
+                continue;
+            }
             let diagnosis = path
                 .into_iter()
                 .map(|relation_id| {
@@ -727,6 +764,30 @@ fn flag_skipped_drop(body: &Body<'_>, block: BasicBlock, succ: BasicBlock) -> Op
         }
         _ => None,
     }
+}
+
+/// Collapse a guard onto the guard that acquired the lock it holds:
+/// follow `move_source` chains while the guard is only ever produced by
+/// moving another guard in. A guard acquired by a lock call, or a
+/// parameter with no recorded source, is its own canonical guard.
+fn canonical_guard(mut id: LockGuardId, lockguards: &LockGuardMap<'_>) -> LockGuardId {
+    let mut seen = FxHashSet::default();
+    while let Some(info) = lockguards.get(&id) {
+        if !info.is_gen_only_by_move() {
+            break;
+        }
+        match info.move_source {
+            Some(src) => {
+                let next = LockGuardId::new(id.instance_id, src);
+                if !seen.insert(next) {
+                    break;
+                }
+                id = next;
+            }
+            None => break,
+        }
+    }
+    id
 }
 
 fn deadlock_possibility(
