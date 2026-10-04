@@ -146,7 +146,7 @@ impl<'tcx> DeadlockDetector<'tcx> {
                 };
                 let body = self.tcx.instance_mir(instance.def);
                 let context = contexts[&id].clone();
-                let states = self.intraproc_gen_kill(body, &context, lockguard_info);
+                let states = self.intraproc_gen_kill(id, body, &context, lockguard_info);
                 for edge in callgraph.graph.edges_directed(id, Direction::Outgoing) {
                     let callee = edge.target();
                     for callsite in edge.weight() {
@@ -554,11 +554,24 @@ impl<'tcx> DeadlockDetector<'tcx> {
     /// Apply Gen/Kill to get live lockguards for each location in the same fn.
     fn intraproc_gen_kill(
         &mut self,
+        instance_id: InstanceId,
         body: &'tcx Body<'tcx>,
         context: &LiveLockGuards,
         lockguard_info: &LockGuardMap<'tcx>,
     ) -> FxHashMap<Location, LiveLockGuards> {
         let (gen_map, kill_map) = Self::gen_kill_locations(lockguard_info);
+        // Guards passed by value as `copy` call arguments die on the
+        // normal-return edge of that call, but stay live on unwind (#121).
+        let mut copy_arg_kill_map: FxHashMap<Location, FxHashSet<LockGuardId>> =
+            FxHashMap::default();
+        for (id, info) in lockguard_info {
+            if id.instance_id != instance_id {
+                continue;
+            }
+            for loc in &info.copy_arg_kill_locs {
+                copy_arg_kill_map.entry(*loc).or_default().insert(*id);
+            }
+        }
         let mut worklist: VecDeque<Location> = Default::default();
         for (bb, bb_data) in body.basic_blocks.iter_enumerated() {
             for stmt_idx in 0..bb_data.statements.len() + 1 {
@@ -600,6 +613,17 @@ impl<'tcx> DeadlockDetector<'tcx> {
                         state
                             .0
                             .retain(|id| !(id.local == local && lockguard_info.contains_key(id)));
+                    }
+                    // Guards passed by value as `copy` arguments die on the
+                    // normal-return edge of the call; on unwind the caller
+                    // still owns and drops them.
+                    if let TerminatorKind::Call { target, .. } = &body[loc.block].terminator().kind
+                    {
+                        if *target == Some(succ_bb) {
+                            if let Some(kill_ids) = copy_arg_kill_map.get(&loc) {
+                                state.0.retain(|id| !kill_ids.contains(id));
+                            }
+                        }
                     }
                     // union and reprocess if changed
                     let changed = states.get_mut(&succ).unwrap().union_in_place(state);
