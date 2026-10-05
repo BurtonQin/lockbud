@@ -36,6 +36,36 @@ fn dest_args0<'tcx>(
     }
     None
 }
+/// `std::mem::drop(x)` lowers to `_tmp = move x; mem::drop(_tmp)`, so the
+/// recorded call argument is an intermediate temporary rather than the
+/// dropped local. Resolve such move chains back to the moved-from place,
+/// which is what use-after-free matching must compare against (#124).
+fn resolve_moved_in_arg<'tcx>(body: &Body<'tcx>, place: &Place<'tcx>) -> Place<'tcx> {
+    let mut current = *place;
+    for _ in 0..8 {
+        let mut next = None;
+        for block_data in body.basic_blocks.iter() {
+            for statement in &block_data.statements {
+                if let StatementKind::Assign(boxed) = &statement.kind {
+                    let (dest, rvalue) = &**boxed;
+                    if dest.as_ref() == current.as_ref() {
+                        if let Rvalue::Use(Operand::Move(src)) = rvalue {
+                            if src.projection.is_empty() && src.local != current.local {
+                                next = Some(*src);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        match next {
+            Some(src) => current = src,
+            None => break,
+        }
+    }
+    current
+}
+
 /// std::mem::drop(place);
 fn collect_manual_drop<'tcx>(
     callgraph: &CallGraph<'tcx>,
@@ -69,6 +99,7 @@ fn collect_manual_drop<'tcx>(
                     Some((_, Some(places0))) => places0,
                     _ => continue,
                 };
+                let places0 = resolve_moved_in_arg(body, &places0);
                 manual_drops
                     .entry(caller_id)
                     .or_default()
