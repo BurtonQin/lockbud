@@ -3,8 +3,11 @@ extern crate rustc_middle;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, Location, Place, Terminator, TerminatorKind};
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::mir::{
+    BasicBlock, Body, Local, Location, Operand, Place, Rvalue, StatementKind, Terminator,
+    TerminatorKind, START_BLOCK,
+};
+use rustc_middle::ty::{self, TyCtxt};
 
 use petgraph::visit::IntoNodeReferences;
 
@@ -78,12 +81,16 @@ fn collect_manual_drop<'tcx>(
 
 /// Collect TerminatorKind::Drop
 struct AutoDropCollector<'tcx> {
+    tcx: TyCtxt<'tcx>,
+    body: &'tcx Body<'tcx>,
     drop_locations: Vec<(Location, Place<'tcx>)>,
 }
 
 impl<'tcx> AutoDropCollector<'tcx> {
-    fn new() -> Self {
+    fn new(tcx: TyCtxt<'tcx>, body: &'tcx Body<'tcx>) -> Self {
         Self {
+            tcx,
+            body,
             drop_locations: Vec::new(),
         }
     }
@@ -91,12 +98,31 @@ impl<'tcx> AutoDropCollector<'tcx> {
     fn finish(self) -> Vec<(Location, Place<'tcx>)> {
         self.drop_locations
     }
+
+    /// Dropping a borrow guard releases the borrow but never frees the
+    /// borrowed value, so it cannot be the free that a use-after-free is
+    /// measured against: e.g. `let p = data.borrow().as_ptr()` keeps `data`
+    /// alive after the temporary `Ref` dies (#110).
+    fn is_borrow_guard(&self, place: &Place<'tcx>) -> bool {
+        let ty = place.ty(&self.body.local_decls, self.tcx).ty;
+        match ty.kind() {
+            ty::TyKind::Adt(adt_def, _) => {
+                // def_path_str prints the std facade path (std::cell::Ref)
+                // for these core types, so match on the tail.
+                let path = self.tcx.def_path_str(adt_def.did());
+                path.ends_with("cell::Ref") || path.ends_with("cell::RefMut")
+            }
+            _ => false,
+        }
+    }
 }
 
 impl<'tcx> Visitor<'tcx> for AutoDropCollector<'tcx> {
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         if let TerminatorKind::Drop { place, .. } = &terminator.kind {
-            self.drop_locations.push((location, *place));
+            if !self.is_borrow_guard(place) {
+                self.drop_locations.push((location, *place));
+            }
         }
     }
 }
@@ -123,4 +149,130 @@ fn is_reachable(from: Location, to: Location, body: &Body<'_>) -> bool {
         }
     }
     false
+}
+
+/// Whether every path from `start` to `target` goes through `skipped`.
+fn is_only_reachable_via(
+    start: BasicBlock,
+    target: BasicBlock,
+    skipped: BasicBlock,
+    body: &Body<'_>,
+) -> bool {
+    if start == target {
+        return false;
+    }
+    let mut worklist = Vec::new();
+    let mut visited = FxHashSet::default();
+    worklist.push(start);
+    visited.insert(start);
+    while let Some(curr) = worklist.pop() {
+        if curr == target {
+            return true;
+        }
+        for succ in body.basic_blocks[curr].terminator().successors() {
+            if succ != skipped && visited.insert(succ) {
+                worklist.push(succ);
+            }
+        }
+    }
+    false
+}
+
+fn collect_moves_in_rvalue<'tcx>(
+    rvalue: &Rvalue<'tcx>,
+    loc: Location,
+    moves: &mut FxHashMap<Local, Vec<Location>>,
+) {
+    let operands: Vec<&Operand<'tcx>> = match rvalue {
+        Rvalue::Use(op)
+        | Rvalue::Repeat(op, _)
+        | Rvalue::UnaryOp(_, op)
+        | Rvalue::Cast(_, op, _)
+        | Rvalue::ShallowInitBox(op, _) => vec![op],
+        Rvalue::BinaryOp(_, pair) => vec![&pair.0, &pair.1],
+        Rvalue::Aggregate(_, ops) => ops.iter().collect(),
+        _ => vec![],
+    };
+    for op in operands {
+        if let Operand::Move(place) = op {
+            if place.projection.is_empty() {
+                moves.entry(place.local).or_default().push(loc);
+            }
+        }
+    }
+}
+
+/// Remove auto-drops that can never execute. MIR's drop elaboration leaves a
+/// flag-guarded `Drop` behind for a local that was moved out, and that dead
+/// drop must not be treated as a real free of the pointee: e.g.
+/// `_rc = Rc::new(move _value)` keeps the pointee alive on the heap while a
+/// dead `Drop(_value)` remains in the MIR (#110, #107).
+///
+/// A drop of a bare local is considered dead when some move-out of that local
+/// (a) is ordered before the drop, (b) every path to the drop passes it, and
+/// (c) no path from it reaches another write of the local, i.e. the local is
+/// definitely moved out at the drop. Manual `mem::drop` callsites are real
+/// frees and are never filtered.
+pub(super) fn filter_moved_out_drops<'tcx>(
+    drops: Vec<(Location, Place<'tcx>)>,
+    body: &'tcx Body<'tcx>,
+) -> Vec<(Location, Place<'tcx>)> {
+    let mut writes: FxHashMap<Local, Vec<Location>> = FxHashMap::default();
+    let mut moves: FxHashMap<Local, Vec<Location>> = FxHashMap::default();
+    for (block, block_data) in body.basic_blocks.iter_enumerated() {
+        for (idx, statement) in block_data.statements.iter().enumerate() {
+            let loc = Location {
+                block,
+                statement_index: idx,
+            };
+            if let StatementKind::Assign(boxed) = &statement.kind {
+                let (dest, rvalue) = &**boxed;
+                writes.entry(dest.local).or_default().push(loc);
+                collect_moves_in_rvalue(rvalue, loc, &mut moves);
+            }
+        }
+        let term_loc = Location {
+            block,
+            statement_index: block_data.statements.len(),
+        };
+        if let TerminatorKind::Call {
+            args, destination, ..
+        } = &block_data.terminator().kind
+        {
+            writes.entry(destination.local).or_default().push(term_loc);
+            for arg in args {
+                if let Operand::Move(place) = &arg.node {
+                    if place.projection.is_empty() {
+                        moves.entry(place.local).or_default().push(term_loc);
+                    }
+                }
+            }
+        }
+    }
+    drops
+        .into_iter()
+        .filter(|(drop_loc, drop_place)| {
+            if !drop_place.projection.is_empty() {
+                return true;
+            }
+            let Some(move_locs) = moves.get(&drop_place.local) else {
+                return true;
+            };
+            let no_write_after = |move_loc: &Location| {
+                writes.get(&drop_place.local).is_none_or(|write_locs| {
+                    write_locs
+                        .iter()
+                        .all(|w| !is_reachable(*move_loc, *w, body))
+                })
+            };
+            !move_locs.iter().any(|move_loc| {
+                let cut = if move_loc.block == drop_loc.block {
+                    move_loc.statement_index < drop_loc.statement_index
+                } else {
+                    is_only_reachable_via(START_BLOCK, drop_loc.block, move_loc.block, body)
+                };
+                cut && no_write_after(move_loc)
+            })
+        })
+        .collect()
 }
