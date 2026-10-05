@@ -1029,6 +1029,55 @@ impl<'a, 'tcx> AliasAnalysis<'a, 'tcx> {
                 }
             }
         }
+        // 4. Callee-param linkage: if node2 traces back to a parameter of
+        // instance2 and instance2 is called by instance1, then node2 may
+        // alias node1 when the corresponding argument at a callsite aliases
+        // node1. e.g. `read_block(read_scoped, &rw1)` with `*lock.write()`
+        // inside `read_block`: the write guard derives from the `lock`
+        // parameter whose argument is the very lock the caller's read guard
+        // holds (#105).
+        let param_locals = param_locals_derived_from(node2.clone(), body2, &points_to_map2);
+        if !param_locals.is_empty() {
+            let caller_id = self.callgraph.instance_to_index(instance1);
+            let callee_id = self.callgraph.instance_to_index(instance2);
+            if let (Some(caller_id), Some(callee_id)) = (caller_id, callee_id) {
+                if let Some(callsites) = self.callgraph.callsites(caller_id, callee_id) {
+                    for callsite in callsites {
+                        let Some(loc) = callsite.location() else {
+                            continue;
+                        };
+                        let TerminatorKind::Call { args, .. } = &body1[loc.block].terminator().kind
+                        else {
+                            continue;
+                        };
+                        for (pos, arg) in args.iter().enumerate() {
+                            // MIR locals 1..=arg_count are the parameters, in
+                            // argument order.
+                            if !param_locals.contains(&Local::from_usize(pos + 1)) {
+                                continue;
+                            }
+                            let Some(arg_place) = arg.node.place() else {
+                                continue;
+                            };
+                            let arg_node = ConstraintNode::Place(arg_place.as_ref());
+                            for (query1, query2) in
+                                [(node1.clone(), arg_node.clone()), (arg_node, node1.clone())]
+                            {
+                                if let Some(alias_kind) =
+                                    self.intraproc_alias(instance1, &query1, &query2)
+                                {
+                                    if alias_kind > ApproximateAliasKind::Unlikely {
+                                        // The extra indirection through the
+                                        // callee's parameter costs precision.
+                                        return Some(ApproximateAliasKind::Possibly);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Some(ApproximateAliasKind::Unlikely)
     }
 
@@ -1281,6 +1330,46 @@ fn points_to_paths_to_param<'tcx>(
         &mut path,
         &mut result,
     );
+    result
+}
+
+/// Collect the locals of `body`'s parameters that `node`'s points-to set
+/// derives from, following pointees transitively (re-anchoring projected
+/// and bare pointees on their bare local). Unlike
+/// `points_to_paths_to_param`, bare-local pointees are followed too, so a
+/// guard whose points-to set directly contains an `Alloc(param)` counts.
+fn param_locals_derived_from<'tcx>(
+    node: ConstraintNode<'tcx>,
+    body: &'tcx Body<'tcx>,
+    points_to_map: &PointsToMap<'tcx>,
+) -> FxHashSet<Local> {
+    let mut result = FxHashSet::default();
+    let mut visited = FxHashSet::default();
+    let mut worklist = Vec::new();
+    worklist.push(node);
+    while let Some(node) = worklist.pop() {
+        if !visited.insert(node.clone()) {
+            continue;
+        }
+        let place = match node {
+            ConstraintNode::Alloc(place) | ConstraintNode::Place(place) => place,
+            _ => continue,
+        };
+        if is_parameter(place.local, body) {
+            result.insert(place.local);
+            continue;
+        }
+        let bare = ConstraintNode::Place(Place::from(place.local).as_ref());
+        for key in [node.clone(), bare] {
+            if let Some(pts) = points_to_map.get(&key) {
+                for pointee in pts {
+                    if let ConstraintNode::Alloc(place1) | ConstraintNode::Place(place1) = pointee {
+                        worklist.push(ConstraintNode::Place(Place::from(place1.local).as_ref()));
+                    }
+                }
+            }
+        }
+    }
     result
 }
 
