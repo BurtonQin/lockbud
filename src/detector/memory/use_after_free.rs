@@ -10,8 +10,10 @@ extern crate rustc_middle;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_index::Idx;
 use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::{Body, HasLocalDecls, Local, Location, Place};
-use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_middle::mir::{
+    AggregateKind, Body, HasLocalDecls, Local, Location, Operand, Place, Rvalue, StatementKind,
+};
+use rustc_middle::ty::{self, ExistentialPredicate, Instance, TyCtxt, TyKind, TypingEnv};
 
 use petgraph::visit::IntoNodeReferences;
 
@@ -71,6 +73,9 @@ impl<'tcx> UseAfterFreeDetector<'tcx> {
             pts, &drops, body, self.tcx,
         ));
         diagnosis_set.extend(detect_use_after_drop(&raw_ptrs, pts, &drops, body));
+        diagnosis_set.extend(detect_captured_ptr_escape(
+            &raw_ptrs, pts, &drops, body, self.tcx, instance,
+        ));
         diagnosis_set.into_iter().map(|diagnosis| Report::UseAfterFree(ReportContent::new("UseAfterFree".to_owned(), "Possibly".to_owned(), diagnosis, "Raw ptr is used or escapes the current function after the pointed value is dropped".to_owned()))).collect::<Vec<_>>()
     }
 
@@ -242,6 +247,114 @@ fn detect_escape_to_return_or_param<'tcx>(
         }
     }
     diagnosis_set
+}
+
+/// Detect raw pointers captured by closures that escape the function
+/// through its return value (#123): e.g. `foo() -> Box<dyn Fn()>` captures
+/// `data.as_ptr()` into a `move` closure and returns it, while `data` is
+/// dropped when `foo` returns. Calling the returned closure later uses a
+/// dangling pointer.
+fn detect_captured_ptr_escape<'tcx>(
+    raw_ptrs: &FxHashSet<Local>,
+    pts: &PointsToMap<'tcx>,
+    drops: &[(Location, Place<'tcx>)],
+    body: &'tcx Body<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    instance: &Instance<'tcx>,
+) -> FxHashSet<String> {
+    // Only functions returning an Fn-like type let a closure escape their
+    // lifetime; spawned closures are a separate pattern.
+    let fn_like = returns_fn_like(tcx, instance);
+    if !fn_like {
+        return FxHashSet::default();
+    }
+    let mut diagnosis_set = FxHashSet::default();
+    for (block, block_data) in body.basic_blocks.iter_enumerated() {
+        for (idx, statement) in block_data.statements.iter().enumerate() {
+            let StatementKind::Assign(boxed) = &statement.kind else {
+                continue;
+            };
+            let (dest, rvalue) = &**boxed;
+            let Rvalue::Aggregate(kind, ops) = rvalue else {
+                continue;
+            };
+            if !matches!(&**kind, AggregateKind::Closure(..)) {
+                continue;
+            }
+            for op in ops.iter() {
+                // A `move` closure captures non-Copy upvars with `Move`, but
+                // raw pointers are `Copy`, so their capture lowers to `Copy`
+                // while the original local stays alive in the function.
+                let (Operand::Move(place) | Operand::Copy(place)) = op else {
+                    continue;
+                };
+                if !place.projection.is_empty() || !raw_ptrs.contains(&place.local) {
+                    continue;
+                }
+                let capture_loc = Location {
+                    block,
+                    statement_index: idx,
+                };
+                let ptr_node = ConstraintNode::Place(Place::from(place.local).as_ref());
+                let Some(ptes) = pts.get(&ptr_node) else {
+                    continue;
+                };
+                for (drop_loc, drop_place) in drops {
+                    if body.basic_blocks[drop_loc.block].is_cleanup {
+                        continue;
+                    }
+                    // A bare drop frees everything rooted at the local.
+                    if !ptes.iter().any(|pte| {
+                        matches!(pte, ConstraintNode::Place(p) | ConstraintNode::Alloc(p) if p.local == drop_place.local)
+                    }) {
+                        continue;
+                    }
+                    let capture_span = body.source_info(capture_loc).span;
+                    let diagnosis = format!(
+                        "Raw ptr {:?} at {:?} is captured by a closure returned from this function; the pointee is dropped at {:?}",
+                        place.local,
+                        capture_span,
+                        body.source_info(*drop_loc).span
+                    );
+                    diagnosis_set.insert(diagnosis);
+                }
+            }
+            let _ = dest;
+        }
+    }
+    diagnosis_set
+}
+
+/// Whether the function returns an Fn-like type (`dyn Fn`/`impl Fn`/fn
+/// pointer, possibly wrapped, e.g. `Box<dyn Fn()>`).
+fn returns_fn_like<'tcx>(tcx: TyCtxt<'tcx>, instance: &Instance<'tcx>) -> bool {
+    let ty = instance.ty(tcx, TypingEnv::fully_monomorphized());
+    let TyKind::FnDef(..) = ty.kind() else {
+        return false;
+    };
+    let sig = tcx.fn_sig(instance.def_id());
+    let sig = instance.instantiate_mir_and_normalize_erasing_regions(
+        tcx,
+        TypingEnv::fully_monomorphized(),
+        sig,
+    );
+    contains_fn_like(tcx, sig.skip_binder().output())
+}
+
+fn contains_fn_like(tcx: TyCtxt<'_>, ty: ty::Ty<'_>) -> bool {
+    match ty.kind() {
+        TyKind::FnPtr(..) => true,
+        TyKind::Dynamic(predicates, ..) => predicates.iter().any(|predicate| {
+            matches!(predicate.skip_binder(), ExistentialPredicate::Trait(trait_ref) if {
+                let path = tcx.def_path_str(trait_ref.def_id);
+                path.ends_with("::Fn") || path.ends_with("::FnMut") || path.ends_with("::FnOnce")
+            })
+        }),
+        TyKind::Adt(_, substs) => substs.types().any(|t| contains_fn_like(tcx, t)),
+        TyKind::Ref(_, inner, _) | TyKind::RawPtr(inner, _) => contains_fn_like(tcx, *inner),
+        TyKind::Tuple(fields) => fields.iter().any(|t| contains_fn_like(tcx, t)),
+        _ => false,
+    }
 }
 
 // drop(place): raw_ptr -> place
