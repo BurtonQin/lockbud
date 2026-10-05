@@ -152,6 +152,11 @@ fn detect_escape_to_global<'tcx>(
                 _ => continue,
             };
             for (location, drop) in drops.iter() {
+                // See `detect_escape_to_return_or_param`: an `Arc`/`Rc`
+                // handle drop is not a definite free.
+                if super::is_refcounted_handle_drop(tcx, body, drop) {
+                    continue;
+                }
                 if drop.as_ref() == *place {
                     let escape_span = match escape {
                         ConstraintNode::Place(ptr) => body.local_decls[ptr.local].source_info.span,
@@ -220,6 +225,11 @@ fn detect_escape_to_return_or_param<'tcx>(
                 };
                 for (location, drop_place) in drops {
                     if body.basic_blocks[location.block].is_cleanup {
+                        continue;
+                    }
+                    // Dropping an `Arc`/`Rc` handle only frees the pointee when
+                    // it is the last reference, which is not knowable here.
+                    if super::is_refcounted_handle_drop(tcx, body, drop_place) {
                         continue;
                     }
                     if drop_place.as_ref() == *pte_place {
