@@ -189,6 +189,11 @@ pub struct LockGuardInfo<'tcx> {
     pub move_gen_locs: SmallVec<[Location; 4]>,
     pub recursive_gen_locs: SmallVec<[Location; 4]>,
     pub kill_locs: SmallVec<[Location; 4]>,
+    /// Locations where the guard is passed by value into a call as a
+    /// `copy` argument. Recent rustc ABIs pass such arguments with `copy`
+    /// while the caller keeps dropping them on the unwind path, so the
+    /// guard dies on the normal-return edge but not on unwind.
+    pub copy_arg_kill_locs: SmallVec<[Location; 4]>,
     /// If this guard is only ever assigned by moving another guard local,
     /// that source local: the two hold the same lock acquisition, so the
     /// moved guard is an alias of its source rather than a new acquisition.
@@ -204,6 +209,7 @@ impl<'tcx> LockGuardInfo<'tcx> {
             move_gen_locs: Default::default(),
             recursive_gen_locs: Default::default(),
             kill_locs: Default::default(),
+            copy_arg_kill_locs: Default::default(),
             move_source: None,
         }
     }
@@ -293,6 +299,24 @@ impl<'tcx> Visitor<'tcx> for LockGuardCollector<'_, '_, 'tcx> {
             match context {
                 PlaceContext::NonMutatingUse(NonMutatingUseContext::Move) => {
                     info.kill_locs.push(location);
+                }
+                PlaceContext::NonMutatingUse(NonMutatingUseContext::Copy) => {
+                    // A guard passed by value as a `copy` call argument: the
+                    // callee owns it after the call returns normally, while
+                    // the caller keeps dropping it on unwind (#121).
+                    if let TerminatorKind::Call { args, .. } =
+                        &self.body[location.block].terminator().kind
+                    {
+                        let is_by_value_arg = args.iter().any(|arg| {
+                            matches!(
+                                arg.node.place(),
+                                Some(place) if place.local == local && place.projection.is_empty()
+                            )
+                        });
+                        if is_by_value_arg {
+                            info.copy_arg_kill_locs.push(location);
+                        }
+                    }
                 }
                 PlaceContext::MutatingUse(context) => match context {
                     MutatingUseContext::Drop => info.kill_locs.push(location),
