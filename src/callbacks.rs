@@ -22,6 +22,7 @@ use crate::detector::atomic::AtomicityViolationDetector;
 use crate::detector::lock::DeadlockDetector;
 use crate::detector::panic::PanicDetector;
 use crate::detector::report::Report;
+use crate::options::OutputFormat;
 
 pub struct LockBudCallbacks<'a> {
     options: Options,
@@ -89,6 +90,26 @@ impl rustc_driver::Callbacks for LockBudCallbacks<'_> {
 }
 
 impl LockBudCallbacks<'_> {
+    /// Print the reports in the configured format: the native JSON report
+    /// array (default) or one complete SARIF 2.1.0 log (compact, single
+    /// line, same log channel), followed by the human-readable stats line.
+    fn emit_reports(&self, crate_name: &str, reports: &[Report]) {
+        match self.options.format {
+            OutputFormat::Json => {
+                let j = serde_json::to_string_pretty(reports).unwrap();
+                warn!("{}", j);
+            }
+            OutputFormat::Sarif => {
+                let sarif = crate::sarif::reports_to_sarif(crate_name, reports);
+                warn!(
+                    "{}",
+                    serde_json::to_string(&sarif).expect("SARIF log serializes")
+                );
+            }
+        }
+        warn!("{}", report_stats(crate_name, reports));
+    }
+
     fn analyze_with_lockbud<'tcx>(&mut self, _compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
         // Skip crates by names (white or black list).
         let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
@@ -132,10 +153,7 @@ impl LockBudCallbacks<'_> {
                 if !reports.is_empty() {
                     self.found_bug
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    let j = serde_json::to_string_pretty(&reports).unwrap();
-                    warn!("{}", j);
-                    let stats = report_stats(&crate_name, &reports);
-                    warn!("{}", stats);
+                    self.emit_reports(&crate_name, &reports);
                 }
             }
             DetectorKind::AtomicityViolation => {
@@ -147,10 +165,7 @@ impl LockBudCallbacks<'_> {
                 if !reports.is_empty() {
                     self.found_bug
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    let j = serde_json::to_string_pretty(&reports).unwrap();
-                    warn!("{}", j);
-                    let stats = report_stats(&crate_name, &reports);
-                    warn!("{}", stats);
+                    self.emit_reports(&crate_name, &reports);
                 }
             }
             DetectorKind::Memory => {
@@ -168,10 +183,7 @@ impl LockBudCallbacks<'_> {
                 if !reports.is_empty() {
                     self.found_bug
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    let j = serde_json::to_string_pretty(&reports).unwrap();
-                    warn!("{}", j);
-                    let stats = report_stats(&crate_name, &reports);
-                    warn!("{}", stats);
+                    self.emit_reports(&crate_name, &reports);
                 }
             }
             DetectorKind::All => {
@@ -202,10 +214,7 @@ impl LockBudCallbacks<'_> {
                 if !reports.is_empty() {
                     self.found_bug
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    let j = serde_json::to_string_pretty(&reports).unwrap();
-                    warn!("{}", j);
-                    let stats = report_stats(&crate_name, &reports);
-                    warn!("{}", stats);
+                    self.emit_reports(&crate_name, &reports);
                 }
             }
             DetectorKind::Panic => {

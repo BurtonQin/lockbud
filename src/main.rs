@@ -13,6 +13,7 @@ mod callbacks;
 mod detector;
 mod interest;
 mod options;
+mod sarif;
 
 use log::debug;
 use options::Options;

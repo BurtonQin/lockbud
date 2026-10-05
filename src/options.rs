@@ -4,6 +4,8 @@
 //! `--crate-name-list [crate1,crate2]` or `-l`, white or black lists of crates decided by `-b`.
 //! if `-l` not specified, then do not white-or-black list the crates.
 //! `--exit-code-on-bug`, exit with a non-zero code when at least one bug is reported.
+//! `--format {json|sarif}`, report output format; `json` (default) prints the
+//! native report records, `sarif` prints a SARIF 2.1.0 log instead.
 use clap::{Arg, ArgAction, Command};
 use std::error::Error;
 
@@ -11,6 +13,20 @@ use std::error::Error;
 pub enum CrateNameList {
     White(Vec<String>),
     Black(Vec<String>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// Native report records (the historical output).
+    Json,
+    /// One SARIF 2.1.0 log per analyzed crate, on the same log channel.
+    Sarif,
+}
+
+impl Default for OutputFormat {
+    fn default() -> Self {
+        OutputFormat::Json
+    }
 }
 
 impl Default for CrateNameList {
@@ -64,6 +80,14 @@ fn make_options_parser() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Exit with a non-zero code when at least one bug is reported"),
         )
+        .arg(
+            Arg::new("format")
+                .long("format")
+                .action(ArgAction::Set)
+                .value_parser(["json", "sarif"])
+                .default_value("json")
+                .help("Report output format: json (native records) or sarif (SARIF 2.1.0 log)"),
+        )
 }
 
 #[derive(Debug)]
@@ -73,6 +97,7 @@ pub struct Options {
     /// Exit the compiler with a non-zero code when at least one bug is
     /// reported, so CI pipelines can fail on detections.
     pub exit_code_on_bug: bool,
+    pub format: OutputFormat,
 }
 
 impl Default for Options {
@@ -81,6 +106,7 @@ impl Default for Options {
             detector_kind: DetectorKind::Deadlock,
             crate_name_list: CrateNameList::Black(Vec::new()),
             exit_code_on_bug: false,
+            format: OutputFormat::Json,
         }
     }
 }
@@ -114,10 +140,15 @@ impl Options {
                 }
             })
             .unwrap_or_default();
+        let format = match matches.get_one::<String>("format").map(String::as_str) {
+            Some("sarif") => OutputFormat::Sarif,
+            _ => OutputFormat::Json,
+        };
         Ok(Options {
             detector_kind,
             crate_name_list,
             exit_code_on_bug: matches.get_flag("exit_code_on_bug"),
+            format,
         })
     }
 }
@@ -150,6 +181,17 @@ mod tests {
         assert!(options.exit_code_on_bug);
         let options = Options::parse_from_str("-k deadlock").unwrap();
         assert!(!options.exit_code_on_bug);
+    }
+
+    #[test]
+    fn test_parse_from_str_format() {
+        let options = Options::parse_from_str("-k deadlock --format sarif").unwrap();
+        assert_eq!(options.format, OutputFormat::Sarif);
+        let options = Options::parse_from_str("-k deadlock").unwrap();
+        assert_eq!(options.format, OutputFormat::Json);
+        let options = Options::parse_from_str("-k deadlock --format json").unwrap();
+        assert_eq!(options.format, OutputFormat::Json);
+        assert!(Options::parse_from_str("-k deadlock --format yaml").is_err());
     }
 
     #[test]
