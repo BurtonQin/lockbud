@@ -184,11 +184,6 @@ impl<'tcx> DeadlockDetector<'tcx> {
                             // spawned on another thread only owns the guards
                             // moved into its captures (#106).
                             let mut closure_context = LiveLockGuards::default();
-                            eprintln!(
-                                "[probe-sp] ClosureDef edge to callee {}, spawned={}",
-                                callee.index(),
-                                callgraph.is_spawned_closure(callee)
-                            );
                             if callgraph.is_spawned_closure(callee) {
                                 for (_dest, rvalue) in assignments_to_local(body, *closure_local) {
                                     if let Rvalue::Aggregate(_, ops) = rvalue {

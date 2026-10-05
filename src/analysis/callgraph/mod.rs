@@ -154,16 +154,6 @@ impl<'tcx> CallGraph<'tcx> {
             let mut collector = CallSiteCollector::new(caller, body, tcx, typing_env);
             collector.visit_body(body);
             let (callsites, spawned_closure_instances) = collector.finish();
-            if !spawned_closure_instances.is_empty() {
-                eprintln!(
-                    "[probe-sp] caller {} spawned closures: {:?}",
-                    tcx.def_path_str(caller.def_id()),
-                    spawned_closure_instances
-                        .iter()
-                        .map(|i| tcx.def_path_str(i.def_id()))
-                        .collect::<Vec<_>>()
-                );
-            }
             for spawned in spawned_closure_instances {
                 // Closure instances are WithBody nodes added up front, so the
                 // lookup always succeeds here.
