@@ -127,6 +127,37 @@ impl<'tcx> Visitor<'tcx> for AutoDropCollector<'tcx> {
     }
 }
 
+/// Whether dropping `place` is not a definite free of its pointee because
+/// the type contains a reference-counted handle (`Arc`/`Rc`): the pointed-to
+/// allocation is only freed when the last handle is dropped, which cannot be
+/// decided intraprocedurally. Escaping a raw pointer and then dropping such a
+/// handle is therefore not reported as a definite use-after-free escape
+/// (#107). Direct use-after-drop within the same function is still reported.
+pub(super) fn is_refcounted_handle_drop<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &Body<'tcx>,
+    place: &Place<'tcx>,
+) -> bool {
+    let ty = place.ty(&body.local_decls, tcx).ty;
+    contains_refcounted_handle(tcx, ty)
+}
+
+fn contains_refcounted_handle(tcx: TyCtxt<'_>, ty: ty::Ty<'_>) -> bool {
+    match ty.kind() {
+        ty::TyKind::Adt(adt_def, substs) => {
+            let path = tcx.def_path_str(adt_def.did());
+            path.ends_with("sync::Arc")
+                || path.ends_with("rc::Rc")
+                || substs.types().any(|t| contains_refcounted_handle(tcx, t))
+        }
+        ty::TyKind::Array(elem, _) | ty::TyKind::Slice(elem) => {
+            contains_refcounted_handle(tcx, *elem)
+        }
+        ty::TyKind::Tuple(fields) => fields.iter().any(|t| contains_refcounted_handle(tcx, t)),
+        _ => false,
+    }
+}
+
 fn is_reachable(from: Location, to: Location, body: &Body<'_>) -> bool {
     if from.block == to.block {
         return from.statement_index <= to.statement_index;
