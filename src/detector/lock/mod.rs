@@ -22,7 +22,7 @@ use petgraph::{Directed, Direction, Graph};
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{
-    BasicBlock, Body, Local, Location, Operand, StatementKind, TerminatorKind,
+    BasicBlock, Body, Local, Location, Operand, Place, Rvalue, StatementKind, TerminatorKind,
 };
 use rustc_middle::ty::{TyCtxt, TypingEnv};
 
@@ -151,6 +151,13 @@ impl<'tcx> DeadlockDetector<'tcx> {
                     let callee = edge.target();
                     for callsite in edge.weight() {
                         if let Some(loc) = callsite.location() {
+                            // The caller's guards are not held by a spawned
+                            // thread: keep them from leaking through the
+                            // spawn machinery into the closure's context
+                            // (#106).
+                            if callgraph.is_spawn_like(callee) {
+                                continue;
+                            }
                             let callsite_state = states[&loc].clone();
                             let changed = contexts
                                 .get_mut(&callee)
@@ -167,13 +174,41 @@ impl<'tcx> DeadlockDetector<'tcx> {
                                     .or_default()
                                     .union_in_place(states[&loc].clone());
                             }
-                        } else if matches!(
-                            callsite,
-                            crate::analysis::callgraph::CallSiteLocation::ClosureDef(_, None)
-                        ) {
+                        } else if let crate::analysis::callgraph::CallSiteLocation::ClosureDef(
+                            closure_local,
+                            None,
+                        ) = callsite
+                        {
+                            // A closure invoked on the same thread observes
+                            // every guard live in the caller; a closure
+                            // spawned on another thread only owns the guards
+                            // moved into its captures (#106).
                             let mut closure_context = LiveLockGuards::default();
-                            for state in states.values() {
-                                closure_context.union_in_place(state.clone());
+                            eprintln!(
+                                "[probe-sp] ClosureDef edge to callee {}, spawned={}",
+                                callee.index(),
+                                callgraph.is_spawned_closure(callee)
+                            );
+                            if callgraph.is_spawned_closure(callee) {
+                                for (_dest, rvalue) in assignments_to_local(body, *closure_local) {
+                                    if let Rvalue::Aggregate(_, ops) = rvalue {
+                                        for op in ops.iter() {
+                                            if let Operand::Move(place) = op {
+                                                if place.projection.is_empty() {
+                                                    let guard_id =
+                                                        LockGuardId::new(id, place.local);
+                                                    if lockguard_info.contains_key(&guard_id) {
+                                                        closure_context.insert(guard_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                for state in states.values() {
+                                    closure_context.union_in_place(state.clone());
+                                }
                             }
                             let changed = contexts
                                 .get_mut(&callee)
@@ -788,6 +823,25 @@ fn flag_skipped_drop(body: &Body<'_>, block: BasicBlock, succ: BasicBlock) -> Op
         }
         _ => None,
     }
+}
+
+/// All assignments whose destination is `local`, as (destination, rvalue).
+fn assignments_to_local<'a, 'tcx>(
+    body: &'a Body<'tcx>,
+    local: Local,
+) -> Vec<(Place<'tcx>, &'a Rvalue<'tcx>)> {
+    let mut out = Vec::new();
+    for block_data in body.basic_blocks.iter() {
+        for statement in &block_data.statements {
+            if let StatementKind::Assign(boxed) = &statement.kind {
+                let (dest, rvalue) = &**boxed;
+                if dest.local == local {
+                    out.push((*dest, rvalue));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Collapse a guard onto the guard that acquired the lock it holds:

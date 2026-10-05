@@ -16,9 +16,26 @@ use petgraph::visit::IntoNodeReferences;
 use petgraph::Direction::Incoming;
 use petgraph::{Directed, Graph};
 
+use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{Body, Local, LocalDecl, LocalKind, Location, Terminator, TerminatorKind};
 use rustc_middle::ty::{self, EarlyBinder, Instance, TyCtxt, TyKind, TypingEnv};
+
+/// Whether the callee spawns its closure arguments on another thread, in
+/// which case guards live in the caller are not held by the closure.
+fn is_spawn_like_callee(path: &str) -> bool {
+    let thread_spawn = path.contains("thread::")
+        && (path.ends_with("::spawn")
+            || path.contains("::spawn_unchecked")
+            || path.contains("::spawn_scoped"));
+    let rayon = path.contains("rayon::")
+        && (path.ends_with("::spawn")
+            || path.ends_with("::spawn_broadcast")
+            || path.ends_with("::join"));
+    let async_spawn = path.starts_with("tokio::spawn") || path.contains("task::spawn");
+    let crossbeam = path.contains("crossbeam::") && path.ends_with("::spawn");
+    thread_spawn || rayon || async_spawn || crossbeam
+}
 
 /// The NodeIndex in CallGraph, denoting a unique instance in CallGraph.
 pub type InstanceId = NodeIndex;
@@ -70,6 +87,13 @@ impl<'tcx> CallGraphNode<'tcx> {
 /// denotes `Instance1` calls `Instance2` at locations `Callsite1` and `CallSite2`.
 pub struct CallGraph<'tcx> {
     pub graph: Graph<CallGraphNode<'tcx>, Vec<CallSiteLocation>, Directed>,
+    /// Closures passed to spawn-like APIs: they run on another thread, so
+    /// guards live in the defining function are not held inside them.
+    pub spawned_closures: FxHashSet<InstanceId>,
+    /// Instances of spawn-like APIs: caller state must not flow into them,
+    /// otherwise it leaks through the std spawn machinery into the spawned
+    /// closure's context.
+    pub spawn_like_callees: FxHashSet<InstanceId>,
 }
 
 impl<'tcx> CallGraph<'tcx> {
@@ -77,7 +101,20 @@ impl<'tcx> CallGraph<'tcx> {
     pub fn new() -> Self {
         Self {
             graph: Graph::new(),
+            spawned_closures: FxHashSet::default(),
+            spawn_like_callees: FxHashSet::default(),
         }
+    }
+
+    /// Whether the closure instance runs on a thread of its own.
+    pub fn is_spawned_closure(&self, id: InstanceId) -> bool {
+        self.spawned_closures.contains(&id)
+    }
+
+    /// Whether the instance is a spawn-like API whose callers' guards are
+    /// not held by it.
+    pub fn is_spawn_like(&self, id: InstanceId) -> bool {
+        self.spawn_like_callees.contains(&id)
     }
 
     /// Search for the InstanceId of a given instance in CallGraph.
@@ -116,12 +153,33 @@ impl<'tcx> CallGraph<'tcx> {
             }
             let mut collector = CallSiteCollector::new(caller, body, tcx, typing_env);
             collector.visit_body(body);
-            for (callee, location) in collector.finish() {
+            let (callsites, spawned_closure_instances) = collector.finish();
+            if !spawned_closure_instances.is_empty() {
+                eprintln!(
+                    "[probe-sp] caller {} spawned closures: {:?}",
+                    tcx.def_path_str(caller.def_id()),
+                    spawned_closure_instances
+                        .iter()
+                        .map(|i| tcx.def_path_str(i.def_id()))
+                        .collect::<Vec<_>>()
+                );
+            }
+            for spawned in spawned_closure_instances {
+                // Closure instances are WithBody nodes added up front, so the
+                // lookup always succeeds here.
+                if let Some(idx) = self.instance_to_index(&spawned) {
+                    self.spawned_closures.insert(idx);
+                }
+            }
+            for (callee, location) in callsites {
                 let callee_idx = if let Some(callee_idx) = self.instance_to_index(&callee) {
                     callee_idx
                 } else {
                     self.graph.add_node(CallGraphNode::WithoutBody(callee))
                 };
+                if is_spawn_like_callee(&tcx.def_path_str(callee.def_id())) {
+                    self.spawn_like_callees.insert(callee_idx);
+                }
                 if let Some(edge_idx) = self.graph.find_edge(caller_idx, callee_idx) {
                     // Update edge weight.
                     self.graph.edge_weight_mut(edge_idx).unwrap().push(location);
@@ -173,6 +231,10 @@ struct CallSiteCollector<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     typing_env: TypingEnv<'tcx>,
     callsites: Vec<(Instance<'tcx>, CallSiteLocation)>,
+    /// Closure locals passed as arguments to spawn-like calls.
+    spawned_closure_locals: FxHashSet<Local>,
+    /// Instances of the closures above.
+    spawned_closure_instances: Vec<Instance<'tcx>>,
 }
 
 impl<'a, 'tcx> CallSiteCollector<'a, 'tcx> {
@@ -188,12 +250,20 @@ impl<'a, 'tcx> CallSiteCollector<'a, 'tcx> {
             tcx,
             typing_env,
             callsites: Vec::new(),
+            spawned_closure_locals: FxHashSet::default(),
+            spawned_closure_instances: Vec::new(),
         }
     }
 
-    /// Consumes `CallSiteCollector` and returns its callsites when finished visiting.
-    fn finish(self) -> impl IntoIterator<Item = (Instance<'tcx>, CallSiteLocation)> {
-        self.callsites.into_iter()
+    /// Consumes `CallSiteCollector` and returns its callsites and the
+    /// instances of closures spawned on other threads when finished.
+    fn finish(
+        self,
+    ) -> (
+        impl IntoIterator<Item = (Instance<'tcx>, CallSiteLocation)>,
+        Vec<Instance<'tcx>>,
+    ) {
+        (self.callsites, self.spawned_closure_instances)
     }
 }
 
@@ -201,7 +271,10 @@ impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
     /// Resolve direct call.
     /// Inspired by rustc_mir/src/transform/inline.rs#get_valid_function_call.
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
-        if let TerminatorKind::Call { ref func, .. } = terminator.kind {
+        if let TerminatorKind::Call {
+            ref func, ref args, ..
+        } = terminator.kind
+        {
             let func_ty = func.ty(self.body, self.tcx);
             // Only after monomorphizing can Instance::try_resolve work
             let func_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
@@ -217,6 +290,27 @@ impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
                 {
                     self.callsites
                         .push((callee, CallSiteLocation::Direct(location)));
+                    // A closure passed to a spawn-like call runs on a thread
+                    // of its own; remember it by its defining local.
+                    if is_spawn_like_callee(&self.tcx.def_path_str(callee.def_id())) {
+                        for arg in args {
+                            if let Some(place) = arg.node.place() {
+                                if place.projection.is_empty() {
+                                    let arg_ty =
+                                        self.caller.instantiate_mir_and_normalize_erasing_regions(
+                                            self.tcx,
+                                            self.typing_env,
+                                            EarlyBinder::bind(
+                                                self.body.local_decls[place.local].ty,
+                                            ),
+                                        );
+                                    if matches!(arg_ty.kind(), TyKind::Closure(..)) {
+                                        self.spawned_closure_locals.insert(place.local);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -245,6 +339,9 @@ impl<'tcx> Visitor<'tcx> for CallSiteCollector<'_, 'tcx> {
                             .ok()
                             .flatten()
                     {
+                        if self.spawned_closure_locals.contains(&local) {
+                            self.spawned_closure_instances.push(callee_instance);
+                        }
                         self.callsites
                             .push((callee_instance, CallSiteLocation::ClosureDef(local, None)));
                     }
