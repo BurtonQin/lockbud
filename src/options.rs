@@ -15,18 +15,13 @@ pub enum CrateNameList {
     Black(Vec<String>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OutputFormat {
     /// Native report records (the historical output).
+    #[default]
     Json,
     /// One SARIF 2.1.0 log per analyzed crate, on the same log channel.
     Sarif,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Json
-    }
 }
 
 impl Default for CrateNameList {
