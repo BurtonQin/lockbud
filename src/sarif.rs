@@ -14,7 +14,8 @@ use serde_json::{json, Value};
 use crate::detector::lock::report::DeadlockDiagnosis;
 use crate::detector::report::Report;
 
-const SARIF_SCHEMA: &str = "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
+const SARIF_SCHEMA: &str =
+    "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
 
 /// A parsed lockbud span. `end_col_excl` is ONE PAST the last column
 /// (rustc convention); conversion to SARIF's inclusive endColumn happens in
@@ -73,10 +74,7 @@ fn find_spans_in_text(text: &str) -> Vec<Span> {
     while i < words.len() {
         let word = words[i];
         if let Some(head) = word.strip_suffix(':') {
-            if split_line_col(head).is_some()
-                && i + 1 < words.len()
-                && is_line_col(words[i + 1])
-            {
+            if split_line_col(head).is_some() && i + 1 < words.len() && is_line_col(words[i + 1]) {
                 let mut candidate = format!("{} {}", word, words[i + 1]);
                 let mut step = 2;
                 if i + 2 < words.len()
@@ -102,9 +100,7 @@ fn find_spans_in_text(text: &str) -> Vec<Span> {
 fn is_line_col(s: &str) -> bool {
     let mut parts = s.splitn(2, ':');
     match (parts.next(), parts.next()) {
-        (Some(a), Some(b)) => {
-            !a.is_empty() && a.parse::<u32>().is_ok() && b.parse::<u32>().is_ok()
-        }
+        (Some(a), Some(b)) => !a.is_empty() && a.parse::<u32>().is_ok() && b.parse::<u32>().is_ok(),
         _ => false,
     }
 }
@@ -132,11 +128,10 @@ fn span_anchor(span: &Span) -> String {
 }
 
 fn level_for(possibility: &str) -> &'static str {
-    match possibility {
-        // SARIF has no certainty gradation; the original word is kept in
-        // result properties.
-        _ => "warning",
-    }
+    // SARIF has no certainty gradation; the original word is kept in
+    // result properties.
+    let _ = possibility;
+    "warning"
 }
 
 fn cwe_for(kind: &str) -> &'static str {
@@ -152,15 +147,11 @@ fn cwe_for(kind: &str) -> &'static str {
 fn short_description(kind: &str) -> String {
     let text = match kind {
         "DoubleLock" => "Same non-reentrant lock acquired again while held",
-        "ConflictLock" => {
-            "Two locks acquired in opposite orders in different threads"
-        }
+        "ConflictLock" => "Two locks acquired in opposite orders in different threads",
         "CondvarDeadlock" => "Condvar wait/notify deadlock",
         "UseAfterFree" => "Raw pointer used or escaping after the pointee is dropped",
         "InvalidFree" => "Uninitialized memory dropped as an owning type",
-        "AtomicityViolation" => {
-            "Non-atomic read-modify-write split across atomic load and store"
-        }
+        "AtomicityViolation" => "Non-atomic read-modify-write split across atomic load and store",
         _ => "lockbud finding",
     };
     if matches!(text, "lockbud finding") {
@@ -371,8 +362,7 @@ fn result_from_report(report: &Report) -> ResultDraft {
             // No toy in the corpus exercises this kind; emit a generic
             // result with the serialized diagnosis in properties and spans
             // scanned from every string in it.
-            let diagnosis = serde_json::to_value(&content.diagnosis)
-                .unwrap_or_else(|_| Value::Null);
+            let diagnosis = serde_json::to_value(&content.diagnosis).unwrap_or(Value::Null);
             let mut spans = Vec::new();
             collect_spans_from_value(&diagnosis, &mut spans);
             let primary = spans.first().cloned();
@@ -537,8 +527,7 @@ mod tests {
                 "src/main.rs:33:10: 33:34 (#0)".to_owned(),
                 vec![vec![vec!["src/main.rs:28:20: 28:38 (#0)".to_owned()]]],
             ),
-            "The first lock is not released when acquiring the second lock"
-                .to_owned(),
+            "The first lock is not released when acquiring the second lock".to_owned(),
         ))
     }
 
@@ -588,16 +577,23 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| l["location"]["physicalLocation"]["region"]["startLine"].as_u64().unwrap() as u32)
+            .map(|l| {
+                l["location"]["physicalLocation"]["region"]["startLine"]
+                    .as_u64()
+                    .unwrap() as u32
+            })
             .collect();
         assert_eq!(lines, vec![25, 28, 33]);
-        assert_eq!(
-            result["properties"]["first_lock_type"],
-            "StdMutex(i32)"
-        );
+        assert_eq!(result["properties"]["first_lock_type"], "StdMutex(i32)");
         // rules and artifacts registered
-        assert_eq!(run["tool"]["driver"]["rules"][0]["id"], "lockbud/DoubleLock");
-        assert_eq!(run["tool"]["driver"]["rules"][0]["properties"]["cwe"][0], "CWE-833");
+        assert_eq!(
+            run["tool"]["driver"]["rules"][0]["id"],
+            "lockbud/DoubleLock"
+        );
+        assert_eq!(
+            run["tool"]["driver"]["rules"][0]["properties"]["cwe"][0],
+            "CWE-833"
+        );
         let uris: Vec<&str> = run["artifacts"]
             .as_array()
             .unwrap()
@@ -638,17 +634,28 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| l["location"]["physicalLocation"]["region"]["startLine"].as_u64().unwrap() as u32)
+            .map(|l| {
+                l["location"]["physicalLocation"]["region"]["startLine"]
+                    .as_u64()
+                    .unwrap() as u32
+            })
             .collect();
         let lines_b: Vec<u32> = flows[1]["locations"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| l["location"]["physicalLocation"]["region"]["startLine"].as_u64().unwrap() as u32)
+            .map(|l| {
+                l["location"]["physicalLocation"]["region"]["startLine"]
+                    .as_u64()
+                    .unwrap() as u32
+            })
             .collect();
         assert_eq!(lines_a, vec![18, 20, 25]);
         assert_eq!(lines_b, vec![29, 31, 36]);
-        assert_eq!(result["properties"]["lock_pairs"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            result["properties"]["lock_pairs"].as_array().unwrap().len(),
+            2
+        );
     }
 
     #[test]
@@ -667,10 +674,7 @@ mod tests {
         assert_eq!(region["endColumn"], 31);
         let related = result["relatedLocations"].as_array().unwrap();
         assert_eq!(related.len(), 1);
-        assert_eq!(
-            related[0]["physicalLocation"]["region"]["startLine"],
-            10
-        );
+        assert_eq!(related[0]["physicalLocation"]["region"]["startLine"], 10);
         assert_eq!(
             result["properties"]["diagnosis"].as_str().unwrap(),
             "Raw ptr is used at src/main.rs:15:28: 15:32 (#53) after dropped at src/main.rs:10:37: 10:38 (#0)"
